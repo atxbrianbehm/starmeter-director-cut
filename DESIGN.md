@@ -6,8 +6,7 @@ Treat this as a scroll version of Social Post: a local authoring surface for one
 
 ## Composition
 
-- Entrance: a wide STARmeter-style opening-actor card. It defaults to Andy Samberg, but the name, credits, rank, and portrait can all be replaced locally from one control block.
-- Nearby names: Matt Damon and “Weird” Al Yankovic sit close enough to read before the dive.
+- Entrance: three wide STARmeter-style opening cards. They default to Andy Samberg, Matt Damon, and “Weird” Al Yankovic; each card's name, credits, rank, and portrait can be replaced locally from one tabbed control block.
 - Middle: a deterministic generated population of small STARmeter cards. The count is an explicit authoring control, not an implied hard-coded crowd.
 - Exit: David James Ward and Brock LaBorde are the final dark target cards, placed far below the hero.
 - Camera: the stage is a 16:9 window onto a much taller centered page. The page remains one centered column, like a wide desktop version of the supplied mobile reference.
@@ -23,13 +22,15 @@ Treat this as a scroll version of Social Post: a local authoring surface for one
 
 ## Authoring controls
 
-Borrow the useful Social Post mental model: frame-first transport, a visible ruler/playhead, and compact inspector values. The current StarMeter prototype exposes settle timing, easing, motion blur, generated population count, and a locally saved opening-actor editor for name, credits, rank, and portrait.
+Borrow the useful Social Post mental model: frame-first transport, a visible ruler/playhead, and compact inspector values. The current STARmeter editor exposes settle timing, easing, motion blur, generated population count, and a locally saved three-person opening editor for name, credits, rank, and portrait.
 
-On a new browser session, a compact Dave-facing startup guide explains the three-step workflow: swap the opening actor, audition the scroll, and export the take. It can always be reopened from the top bar.
+On a new browser session, a compact Dave-facing startup guide explains the three-step workflow: set the opening people, audition the scroll, and export the take. It can always be reopened from the top bar.
+
+Internal shot annotations never appear on the page cards or in export. Behavioral tags still drive styling and motion, but labels such as start, nearby, crowd, target, and landing-lock copy remain invisible.
 
 ## Export
 
-`Export shot` renders the current page setup to 1920x1080 at 24fps, using the same 81-frame timing and motion-blur treatment as the authoring preview. It requests H.264/MP4 first (`starmeter-shot-1920x1080-24fps.mp4`) and falls back to WebM when the browser does not expose an H.264 MediaRecorder.
+`Export shot` renders the current page setup to 1920x1080 at 24fps for the complete 81-frame, 3.375-second shot, using the same timing and motion-blur treatment as the authoring preview. Automatic canvas-change capture is used for cross-browser duration reliability. The editor requests H.264/MP4 first (`starmeter-shot-1920x1080-24fps-camera.mp4`) and falls back to WebM when the browser does not expose an H.264 MediaRecorder.
 
 ## Crowd portrait pool
 

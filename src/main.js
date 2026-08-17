@@ -13,14 +13,14 @@ const PAGE_TOP = 42;
 // into a soft, uniformly blurred plate.
 const MOTION_BLUR_STRENGTH = 0.45;
 const MOTION_TRAIL_DISTANCE = 320;
-const HERO_STORAGE_KEY = 'starmeter-opening-actor-v1';
+const OPENING_PEOPLE_STORAGE_KEY = 'starmeter-opening-people-v2';
+const LEGACY_HERO_STORAGE_KEY = 'starmeter-opening-actor-v1';
 const GUIDE_SESSION_KEY = 'starmeter-dave-guide-seen-v1';
-const DEFAULT_HERO = Object.freeze({
-  rank: 1420,
-  name: 'Andy Samberg',
-  role: 'Actor · Producer · Writer',
-  photo: assetPath('andy-samberg-card.jpg'),
-});
+const DEFAULT_OPENING_PEOPLE = Object.freeze([
+  Object.freeze({ rank: 1420, name: 'Andy Samberg', role: 'Actor · Producer · Writer', photo: assetPath('andy-samberg-card.jpg'), tag: 'START HERE', tone: 'gold', depth: 0 }),
+  Object.freeze({ rank: 1610, name: 'Matt Damon', role: 'Actor · Producer', photo: assetPath('matt-damon.jpg'), tag: 'NEARBY STAR', tone: 'blue', depth: 1 }),
+  Object.freeze({ rank: 1730, name: '"Weird" Al Yankovic', role: 'Actor · Musician · Writer', photo: assetPath('weird-al-yankovic.jpg'), tag: 'NEARBY STAR', tone: 'pink', depth: 2 }),
+]);
 // Keep the final target pair centered in the clipped browser viewport. This
 // is intentionally a little tighter than the scroll's general page framing
 // so the landing reads as a deliberate lock-on instead of stopping low.
@@ -28,9 +28,7 @@ const DEFAULT_HERO = Object.freeze({
 // second target fully inside the clipped end frame.
 const LANDING_VIEWPORT_FRACTION = 0.445;
 const people = [
-  { ...DEFAULT_HERO, tag: 'START HERE', tone: 'gold', depth: 0 },
-  { rank: 1610, name: 'Matt Damon', role: 'Actor · Producer', tag: 'NEARBY STAR', tone: 'blue', depth: 1, photo: assetPath('matt-damon.jpg') },
-  { rank: 1730, name: '"Weird" Al Yankovic', role: 'Actor · Musician · Writer', tag: 'NEARBY STAR', tone: 'pink', depth: 2, photo: assetPath('weird-al-yankovic.jpg') },
+  ...DEFAULT_OPENING_PEOPLE.map((person) => ({ ...person })),
   { rank: 12840, name: 'Maya Fenn', role: 'Actor · Costume Designer', tag: 'WHOOSH', tone: 'green', depth: 3 },
   { rank: 24100, name: 'Jules Moreno', role: 'Writer · Additional Crew', tag: 'WHOOSH', tone: 'purple', depth: 4 },
   { rank: 48800, name: 'Talia Finch', role: 'Producer · Actor', tag: 'WHOOSH', tone: 'orange', depth: 5 },
@@ -58,18 +56,27 @@ people.forEach((person, index) => {
   if (!person.photo) person.photo = portraitPath(index + 4);
 });
 
-function loadSavedHero() {
+function normalizeOpeningPerson(value, fallback) {
+  if (!value || typeof value !== 'object') return { ...fallback };
+  return {
+    ...fallback,
+    name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : fallback.name,
+    role: typeof value.role === 'string' && value.role.trim() ? value.role.trim() : fallback.role,
+    rank: Number.isFinite(Number(value.rank)) ? Math.max(1, Math.round(Number(value.rank))) : fallback.rank,
+    photo: typeof value.photo === 'string' && value.photo ? value.photo : fallback.photo,
+  };
+}
+
+function loadSavedOpeningPeople() {
   try {
-    const saved = JSON.parse(localStorage.getItem(HERO_STORAGE_KEY));
-    if (!saved || typeof saved !== 'object') return { ...DEFAULT_HERO };
-    return {
-      name: typeof saved.name === 'string' && saved.name.trim() ? saved.name.trim() : DEFAULT_HERO.name,
-      role: typeof saved.role === 'string' && saved.role.trim() ? saved.role.trim() : DEFAULT_HERO.role,
-      rank: Number.isFinite(Number(saved.rank)) ? Math.max(1, Math.round(Number(saved.rank))) : DEFAULT_HERO.rank,
-      photo: typeof saved.photo === 'string' && saved.photo ? saved.photo : DEFAULT_HERO.photo,
-    };
+    const saved = JSON.parse(localStorage.getItem(OPENING_PEOPLE_STORAGE_KEY));
+    if (Array.isArray(saved) && saved.length >= DEFAULT_OPENING_PEOPLE.length) {
+      return DEFAULT_OPENING_PEOPLE.map((fallback, index) => normalizeOpeningPerson(saved[index], fallback));
+    }
+    const legacyHero = JSON.parse(localStorage.getItem(LEGACY_HERO_STORAGE_KEY));
+    return DEFAULT_OPENING_PEOPLE.map((fallback, index) => normalizeOpeningPerson(index === 0 ? legacyHero : null, fallback));
   } catch {
-    return { ...DEFAULT_HERO };
+    return DEFAULT_OPENING_PEOPLE.map((person) => ({ ...person }));
   }
 }
 
@@ -77,7 +84,8 @@ const state = {
   frame: 0,
   settleFrame: 66,
   populationCount: 144,
-  hero: loadSavedHero(),
+  openingPeople: loadSavedOpeningPeople(),
+  editingOpeningIndex: 0,
   motionBlur: true,
   playing: false,
   raf: null,
@@ -91,14 +99,14 @@ app.innerHTML = `
     <section class="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guideTitle" aria-describedby="guideIntro">
       <div class="guide-kicker"><span>SHOT / 07</span><span>2-minute setup</span></div>
       <h1 id="guideTitle">Dave, here’s your STARmeter shot.</h1>
-      <p id="guideIntro">Everything you need is on this screen. Set the opening actor, audition the move, then export the finished take.</p>
+      <p id="guideIntro">Everything you need is on this screen. Set the three opening people, audition the move, then export the finished take.</p>
       <ol class="guide-steps">
-        <li><span>1</span><div><strong>Swap the opening actor</strong><p>Change the name, credits, ranking, and portrait in <em>Opening actor</em>. The preview and export stay in sync.</p></div></li>
+        <li><span>1</span><div><strong>Set the opening people</strong><p>Choose <em>Main actor</em>, <em>Person 2</em>, or <em>Person 3</em>, then change the name, credits, ranking, and portrait. The preview and export stay in sync.</p></div></li>
         <li><span>2</span><div><strong>Audition the scroll</strong><p>Press play or drag the timeline. Adjust the settle frame, crowd length, scroll feel, and motion blur on the right.</p></div></li>
-        <li><span>3</span><div><strong>Export the take</strong><p>Click <em>Export shot</em> when it feels right. Your actor photo stays in this browser and is used only for the shot.</p></div></li>
+        <li><span>3</span><div><strong>Export the take</strong><p>Click <em>Export shot</em> when it feels right. Your replacement portraits stay in this browser and are used only for the shot.</p></div></li>
       </ol>
       <div class="guide-actions">
-        <button class="guide-primary" id="guideActorButton">Change opening actor</button>
+        <button class="guide-primary" id="guideActorButton">Change opening people</button>
         <button class="guide-secondary" id="guideDismissButton">Open the editor</button>
       </div>
       <p class="guide-replay">You can reopen this guide anytime from <strong>How to use</strong>.</p>
@@ -124,7 +132,6 @@ app.innerHTML = `
               <div class="rank-ghost" id="rankGhostA" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostB" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostC" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostD" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostE" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostF" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostG" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostH" aria-hidden="true"></div><div class="rank-lane" id="rankLane"></div>
             </div>
             <div class="stage-hud"><span class="hud-pill">● WEB PAGE / LIVE SCROLL</span><span class="hud-pill muted">24 FPS · 00:03:09</span></div>
-            <div class="landing-callout" id="landingCallout"><span class="landing-dot"></span><span>LOCKED ON TARGETS</span></div>
           </div>
         </div>
         <div class="timeline-card">
@@ -134,7 +141,6 @@ app.innerHTML = `
             <div class="timeline-fill" id="timelineFill"></div><div class="timeline-target" style="left:76.5%"></div><div class="timeline-target" style="left:81.5%"></div><div class="timeline-playhead" id="timelinePlayhead"><i></i></div>
             <input class="scrubber" id="scrubber" type="range" min="0" max="81" value="0" step="1" aria-label="Shot frame" />
           </div>
-          <div class="tick-row"><span>start / <span id="timelineHeroName">Andy</span></span><span>nearby stars</span><span>crowd fall</span><span>targets</span><span>out</span></div>
         </div>
       </div>
       <aside class="inspector">
@@ -143,8 +149,8 @@ app.innerHTML = `
         <div class="control-block"><div class="control-label"><span>SCROLL CHARACTER</span><strong>EASE-IN + BOUNCE</strong></div><div class="segmented"><button class="active" data-ease="exaggerated">Ease + bounce</button><button data-ease="smooth">Smooth</button><button data-ease="linear">Linear</button></div></div>
         <div class="control-block"><div class="control-label"><span>IN-BETWEEN PEOPLE</span><strong id="populationValue">144</strong></div><input id="populationSlider" type="range" min="24" max="360" value="144" step="1" aria-label="Number of in-between people" /><div class="helper"><span>short</span><span>generated crowd</span><span>long</span></div></div>
         <div class="control-block"><div class="toggle-row"><div><span class="control-label">MOTION BLUR</span><p>Stretch the crowd into a comic-book smear.</p></div><button class="toggle on" id="blurToggle" aria-label="Motion blur" aria-pressed="true"><span></span></button></div></div>
-        <div class="cue-card" id="actorControls"><span class="eyebrow">OPENING ACTOR</span><p>Start on <strong id="cueHeroName">Andy Samberg</strong>, then let the page unspool.</p><div class="actor-fields"><label><span>Actor name</span><input id="heroName" type="text" maxlength="80" autocomplete="off" /></label><label><span>Credits</span><input id="heroRole" type="text" maxlength="100" autocomplete="off" /></label><label><span>STARmeter rank</span><input id="heroRank" type="number" min="1" max="9999999" inputmode="numeric" /></label></div><div class="actor-actions"><label class="upload-button" tabindex="0" role="button"><span>Replace portrait</span><input id="heroUpload" type="file" accept="image/*" tabindex="-1" /></label><button class="restore-button" id="restoreHero" type="button">Restore Andy</button></div><p class="actor-status" id="actorStatus" aria-live="polite">Changes are saved in this browser.</p><div class="cue-footer"><span>F 000 → F <span id="cueSettleFrame">066</span></span><span id="starCount">83 STARS</span></div></div>
-        <div class="target-list"><div class="eyebrow">TARGET MARKERS</div><div class="target-row"><span class="marker-ring"></span><div><strong>David James Ward</strong><small>writer · rank 243K</small></div><span class="target-frame">F 62</span></div><div class="target-row"><span class="marker-ring"></span><div><strong>Brock LaBorde</strong><small>writer · rank 654K</small></div><span class="target-frame">F 66</span></div></div>
+        <div class="cue-card" id="openingControls"><span class="eyebrow">OPENING PEOPLE</span><p>Choose one of the first three cards, then change its details and portrait.</p><div class="opening-tabs" role="tablist" aria-label="Opening people"><button class="opening-tab active" type="button" role="tab" aria-selected="true" data-opening-index="0"><span>Main actor</span><strong id="openingTabName0">Andy</strong></button><button class="opening-tab" type="button" role="tab" aria-selected="false" data-opening-index="1"><span>Person 2</span><strong id="openingTabName1">Matt</strong></button><button class="opening-tab" type="button" role="tab" aria-selected="false" data-opening-index="2"><span>Person 3</span><strong id="openingTabName2">Weird Al</strong></button></div><div class="actor-fields"><label><span>Name</span><input id="openingName" type="text" maxlength="80" autocomplete="off" /></label><label><span>Credits</span><input id="openingRole" type="text" maxlength="100" autocomplete="off" /></label><label><span>STARmeter rank</span><input id="openingRank" type="number" min="1" max="9999999" inputmode="numeric" /></label></div><div class="actor-actions"><label class="upload-button" tabindex="0" role="button"><span>Replace portrait</span><input id="openingUpload" type="file" accept="image/*" tabindex="-1" /></label><button class="restore-button" id="restoreOpeningPerson" type="button">Restore this card</button></div><p class="actor-status" id="openingStatus" aria-live="polite">Changes are saved in this browser.</p><div class="cue-footer"><span>3 OPENING CARDS</span><span id="starCount">83 STARS</span></div></div>
+        <div class="target-list"><div class="eyebrow">ENDING CARDS</div><div class="target-row"><span class="marker-ring"></span><div><strong>David James Ward</strong><small>writer · rank 243K</small></div><span class="target-frame">F 62</span></div><div class="target-row"><span class="marker-ring"></span><div><strong>Brock LaBorde</strong><small>writer · rank 654K</small></div><span class="target-frame">F 66</span></div></div>
       </aside>
     </section>
     <footer class="footer-note"><span>STARmeter / editorial motion study</span><span>drag the playhead · press space to play</span></footer>
@@ -166,47 +172,56 @@ const timingLabel = document.querySelector('#timingLabel');
 const scrubber = document.querySelector('#scrubber');
 const stage = document.querySelector('#stage');
 const pageSurface = document.querySelector('#pageSurface');
-const landingCallout = document.querySelector('#landingCallout');
 pageSurface.style.setProperty('--camera-zoom', String(CAMERA_ZOOM));
 const playButton = document.querySelector('#playButton');
 const timelinePlayhead = document.querySelector('#timelinePlayhead');
 const timelineFill = document.querySelector('#timelineFill');
 const daveGuide = document.querySelector('#daveGuide');
-const actorControls = document.querySelector('#actorControls');
-const heroNameInput = document.querySelector('#heroName');
-const heroRoleInput = document.querySelector('#heroRole');
-const heroRankInput = document.querySelector('#heroRank');
-const actorStatus = document.querySelector('#actorStatus');
+const openingControls = document.querySelector('#openingControls');
+const openingNameInput = document.querySelector('#openingName');
+const openingRoleInput = document.querySelector('#openingRole');
+const openingRankInput = document.querySelector('#openingRank');
+const openingStatus = document.querySelector('#openingStatus');
 const exportButton = document.querySelector('#exportButton');
 let guideReturnFocus = null;
 
-function persistHero() {
+function persistOpeningPeople() {
   try {
-    localStorage.setItem(HERO_STORAGE_KEY, JSON.stringify(state.hero));
+    localStorage.setItem(OPENING_PEOPLE_STORAGE_KEY, JSON.stringify(state.openingPeople));
     return true;
   } catch {
     return false;
   }
 }
 
-function setActorStatus(message) {
-  actorStatus.textContent = message;
+function setOpeningStatus(message) {
+  openingStatus.textContent = message;
 }
 
-function heroTimelineName() {
-  return state.hero.name.trim().split(/\s+/)[0] || 'actor';
+function openingTabName(person) {
+  const words = person.name.trim().replace(/"/g, '').split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).join(' ') || 'Person';
 }
 
-function syncHeroCopy() {
-  Object.assign(people[0], state.hero);
-  document.querySelector('#cueHeroName').textContent = state.hero.name;
-  document.querySelector('#timelineHeroName').textContent = heroTimelineName();
+function syncOpeningCopy() {
+  state.openingPeople.forEach((person, index) => {
+    Object.assign(people[index], person);
+    document.querySelector(`#openingTabName${index}`).textContent = openingTabName(person);
+  });
 }
 
-function syncHeroInputs() {
-  heroNameInput.value = state.hero.name;
-  heroRoleInput.value = state.hero.role;
-  heroRankInput.value = state.hero.rank;
+function syncOpeningInputs() {
+  const person = state.openingPeople[state.editingOpeningIndex];
+  openingNameInput.value = person.name;
+  openingRoleInput.value = person.role;
+  openingRankInput.value = person.rank;
+  document.querySelector('#restoreOpeningPerson').textContent = `Restore ${openingTabName(DEFAULT_OPENING_PEOPLE[state.editingOpeningIndex])}`;
+  document.querySelectorAll('[data-opening-index]').forEach((button, index) => {
+    const selected = index === state.editingOpeningIndex;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
 }
 
 function guideHasBeenSeen() {
@@ -242,11 +257,11 @@ function closeGuide({ focusActor = false } = {}) {
   document.querySelector('.shell').removeAttribute('aria-hidden');
   if (focusActor) {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    actorControls.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-    actorControls.classList.add('is-guided');
-    heroNameInput.focus({ preventScroll: true });
-    heroNameInput.select();
-    setTimeout(() => actorControls.classList.remove('is-guided'), 1600);
+    openingControls.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    openingControls.classList.add('is-guided');
+    openingNameInput.focus({ preventScroll: true });
+    openingNameInput.select();
+    setTimeout(() => openingControls.classList.remove('is-guided'), 1600);
     return;
   }
   if (guideReturnFocus instanceof HTMLElement) guideReturnFocus.focus();
@@ -319,7 +334,6 @@ function renderLane() {
   stage.style.setProperty('--speed', `${Math.min(1, progress * 1.4)}`);
   stage.style.setProperty('--blur', `${state.motionBlur ? (velocity * MOTION_BLUR_STRENGTH).toFixed(2) : 0}px`);
   stage.style.setProperty('--streak', `${state.motionBlur ? Math.min(1, velocity * 1.15) : 0}`);
-  landingCallout.classList.toggle('visible', state.frame >= state.settleFrame - 2);
   frameReadout.textContent = `F ${String(state.frame).padStart(3, '0')}`;
   timelineLabel.textContent = `Frame ${state.frame} / ${TOTAL_FRAMES}`;
   timingLabel.textContent = `settles on F${state.settleFrame}`;
@@ -327,7 +341,6 @@ function renderLane() {
   timelinePlayhead.style.left = `${(state.frame / TOTAL_FRAMES) * 100}%`;
   timelineFill.style.width = `${(state.frame / TOTAL_FRAMES) * 100}%`;
   document.querySelector('#settleValue').textContent = state.settleFrame;
-  document.querySelector('#cueSettleFrame').textContent = String(state.settleFrame).padStart(3, '0');
   state.lastRenderFrame = state.frame;
 }
 
@@ -341,7 +354,7 @@ function createCard(person, index) {
   const safeRole = escapeHtml(person.role);
   const safePhoto = escapeHtml(person.photo || '');
   const initials = escapeHtml(person.name.split(' ').map((x) => x[0]).slice(0, 2).join(''));
-  card.innerHTML = `${person.photo ? `<img src="${safePhoto}" alt="${safeName}" />` : `<div class="avatar"><span>${initials}</span></div>`}<div class="card-copy"><div class="rank-line"><span>#${person.rank.toLocaleString()}</span><span class="trend">${person.tag === 'TARGET' ? '↓' : '↗'}</span></div><h3>${safeName}</h3><p>${safeRole}</p></div><span class="card-tag">${person.tag}</span>`;
+  card.innerHTML = `${person.photo ? `<img src="${safePhoto}" alt="${safeName}" />` : `<div class="avatar"><span>${initials}</span></div>`}<div class="card-copy"><div class="rank-line"><span>#${person.rank.toLocaleString()}</span><span class="trend">${person.tag === 'TARGET' ? '↓' : '↗'}</span></div><h3>${safeName}</h3><p>${safeRole}</p></div>`;
   return card;
 }
 function buildLane() {
@@ -354,7 +367,7 @@ function buildLane() {
   ghostF.replaceChildren();
   ghostG.replaceChildren();
   ghostH.replaceChildren();
-  syncHeroCopy();
+  syncOpeningCopy();
   const addCard = (person, index) => {
     const card = createCard(person, index);
     lane.appendChild(card);
@@ -372,30 +385,51 @@ scrubber.addEventListener('input', (event) => { state.frame = Number(event.targe
 document.querySelector('#settleSlider').addEventListener('input', (event) => { state.settleFrame = Number(event.target.value); renderLane(); });
 document.querySelector('#populationSlider').addEventListener('input', (event) => { state.populationCount = Number(event.target.value); buildLane(); });
 
-let heroCommitTimer = null;
-function commitHeroTextUpdate() {
-  clearTimeout(heroCommitTimer);
-  heroCommitTimer = null;
+let openingCommitTimer = null;
+function commitOpeningTextUpdate() {
+  clearTimeout(openingCommitTimer);
+  openingCommitTimer = null;
   buildLane();
-  setActorStatus(persistHero() ? 'Actor updated. Saved in this browser.' : 'Actor updated for this tab. Browser storage is unavailable.');
+  setOpeningStatus(persistOpeningPeople() ? 'Opening people updated. Saved in this browser.' : 'Opening people updated for this tab. Browser storage is unavailable.');
 }
 
-function queueHeroTextUpdate() {
-  const parsedRank = Number(heroRankInput.value);
-  state.hero.name = heroNameInput.value.trim() || 'Opening Actor';
-  state.hero.role = heroRoleInput.value.trim() || 'Actor';
-  if (Number.isFinite(parsedRank) && parsedRank >= 1) state.hero.rank = Math.round(parsedRank);
-  syncHeroCopy();
-  clearTimeout(heroCommitTimer);
-  heroCommitTimer = setTimeout(commitHeroTextUpdate, 160);
+function queueOpeningTextUpdate() {
+  const parsedRank = Number(openingRankInput.value);
+  const person = state.openingPeople[state.editingOpeningIndex];
+  person.name = openingNameInput.value.trim() || ['Main actor', 'Person 2', 'Person 3'][state.editingOpeningIndex];
+  person.role = openingRoleInput.value.trim() || 'Actor';
+  if (Number.isFinite(parsedRank) && parsedRank >= 1) person.rank = Math.round(parsedRank);
+  syncOpeningCopy();
+  clearTimeout(openingCommitTimer);
+  openingCommitTimer = setTimeout(commitOpeningTextUpdate, 160);
 }
 
-[heroNameInput, heroRoleInput, heroRankInput].forEach((input) => input.addEventListener('input', queueHeroTextUpdate));
-[heroNameInput, heroRoleInput, heroRankInput].forEach((input) => input.addEventListener('blur', () => {
-  if (heroCommitTimer) commitHeroTextUpdate();
-  syncHeroInputs();
+[openingNameInput, openingRoleInput, openingRankInput].forEach((input) => input.addEventListener('input', queueOpeningTextUpdate));
+[openingNameInput, openingRoleInput, openingRankInput].forEach((input) => input.addEventListener('blur', () => {
+  if (openingCommitTimer) commitOpeningTextUpdate();
+  syncOpeningInputs();
 }));
-window.addEventListener('pagehide', () => { if (heroCommitTimer) commitHeroTextUpdate(); });
+
+function selectOpeningPerson(index, { focusTab = false } = {}) {
+  if (openingCommitTimer) commitOpeningTextUpdate();
+  state.editingOpeningIndex = Math.max(0, Math.min(DEFAULT_OPENING_PEOPLE.length - 1, index));
+  syncOpeningInputs();
+  setOpeningStatus(`Editing ${state.openingPeople[state.editingOpeningIndex].name}.`);
+  if (focusTab) document.querySelector(`[data-opening-index="${state.editingOpeningIndex}"]`).focus();
+}
+
+document.querySelectorAll('[data-opening-index]').forEach((button) => {
+  button.addEventListener('click', () => selectOpeningPerson(Number(button.dataset.openingIndex)));
+  button.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = Number(button.dataset.openingIndex);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? DEFAULT_OPENING_PEOPLE.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + DEFAULT_OPENING_PEOPLE.length) % DEFAULT_OPENING_PEOPLE.length;
+    selectOpeningPerson(next, { focusTab: true });
+  });
+});
+
+window.addEventListener('pagehide', () => { if (openingCommitTimer) commitOpeningTextUpdate(); });
 
 function encodePortrait(source, width, height) {
   if (!width || !height) throw new Error('The portrait has no readable dimensions.');
@@ -455,24 +489,27 @@ async function preparePortrait(file) {
 
 let portraitRequestId = 0;
 let portraitUploadPending = false;
-const portraitUploadControl = document.querySelector('#heroUpload').closest('.upload-button');
-document.querySelector('#heroUpload').addEventListener('change', async (event) => {
+const openingUploadInput = document.querySelector('#openingUpload');
+const portraitUploadControl = openingUploadInput.closest('.upload-button');
+openingUploadInput.addEventListener('change', async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
   const requestId = ++portraitRequestId;
+  const personIndex = state.editingOpeningIndex;
+  const personName = state.openingPeople[personIndex].name;
   portraitUploadPending = true;
   portraitUploadControl.setAttribute('aria-busy', 'true');
   exportButton.disabled = true;
   exportButton.textContent = 'Preparing portrait';
-  setActorStatus('Preparing the new portrait…');
+  setOpeningStatus(`Preparing ${personName}'s portrait…`);
   try {
     const photo = await preparePortrait(file);
     if (requestId !== portraitRequestId) return;
-    state.hero.photo = photo;
+    state.openingPeople[personIndex].photo = photo;
     buildLane();
-    setActorStatus(persistHero() ? 'Portrait replaced. Saved in this browser.' : 'Portrait replaced for this tab. It is too large to remember after refresh.');
+    setOpeningStatus(persistOpeningPeople() ? `${personName}'s portrait was replaced and saved in this browser.` : `${personName}'s portrait was replaced for this tab. Browser storage is unavailable.`);
   } catch (error) {
-    if (requestId === portraitRequestId) setActorStatus(error.message);
+    if (requestId === portraitRequestId) setOpeningStatus(error.message);
   } finally {
     event.target.value = '';
     if (requestId === portraitRequestId) {
@@ -484,25 +521,26 @@ document.querySelector('#heroUpload').addEventListener('change', async (event) =
   }
 });
 
-document.querySelector('#heroUpload').closest('.upload-button').addEventListener('keydown', (event) => {
+portraitUploadControl.addEventListener('keydown', (event) => {
   if (!['Enter', ' '].includes(event.key)) return;
   event.preventDefault();
-  document.querySelector('#heroUpload').click();
+  openingUploadInput.click();
 });
 
-document.querySelector('#restoreHero').addEventListener('click', () => {
+document.querySelector('#restoreOpeningPerson').addEventListener('click', () => {
   portraitRequestId += 1;
   portraitUploadPending = false;
   portraitUploadControl.removeAttribute('aria-busy');
   exportButton.disabled = false;
   exportButton.textContent = 'Export shot';
-  clearTimeout(heroCommitTimer);
-  heroCommitTimer = null;
-  state.hero = { ...DEFAULT_HERO };
-  try { localStorage.removeItem(HERO_STORAGE_KEY); } catch { /* Restore still applies to this tab. */ }
-  syncHeroInputs();
+  clearTimeout(openingCommitTimer);
+  openingCommitTimer = null;
+  const personIndex = state.editingOpeningIndex;
+  state.openingPeople[personIndex] = { ...DEFAULT_OPENING_PEOPLE[personIndex] };
+  const saved = persistOpeningPeople();
+  syncOpeningInputs();
   buildLane();
-  setActorStatus('Andy restored as the opening actor.');
+  setOpeningStatus(saved ? `${state.openingPeople[personIndex].name} restored and saved.` : `${state.openingPeople[personIndex].name} restored for this tab.`);
 });
 document.querySelectorAll('[data-ease]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-ease]').forEach((b) => b.classList.remove('active')); button.classList.add('active'); easeMode = button.dataset.ease; renderLane(); }));
 document.querySelector('#blurToggle').addEventListener('click', (event) => { state.motionBlur = !state.motionBlur; event.currentTarget.classList.toggle('on', state.motionBlur); event.currentTarget.setAttribute('aria-pressed', String(state.motionBlur)); renderLane(); });
@@ -610,11 +648,6 @@ function drawExportCard(ctx, person, image, x, y, blur, cardWidth) {
   ctx.fillStyle = isTarget ? '#a4aaa0' : '#676967';
   ctx.font = `${isCrowd ? 12 : 14}px Space Grotesk, sans-serif`;
   ctx.fillText(fitCanvasText(ctx, person.role, copyWidth), copyX, y + 90);
-  ctx.fillStyle = isTarget ? '#c7ff48' : '#787a79';
-  ctx.font = `${isCrowd ? 10 : 11}px DM Mono, monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText(person.tag, x + cardWidth - 12, y + 18);
-  ctx.textAlign = 'left';
   ctx.globalAlpha = isCrowd ? 0.82 : 1;
   ctx.restore();
 }
@@ -741,14 +774,6 @@ function renderExportFrame(ctx, frame, cards, images) {
   ctx.fillText('o  WEB PAGE / LIVE SCROLL', 27, 34);
   ctx.fillStyle = '#c4c0b8';
   ctx.fillText('24 FPS  -  00:03:09', width - 177, 34);
-  if (frame >= state.settleFrame - 2) {
-    ctx.fillStyle = 'rgba(10,10,10,.8)';
-    roundedRect(ctx, width / 2 - 92, height - 50, 184, 28, 14); ctx.fill();
-    ctx.strokeStyle = 'rgba(199,255,72,.45)'; ctx.stroke();
-    ctx.fillStyle = '#c7ff48';
-    ctx.font = '10px DM Mono, monospace';
-    ctx.fillText('o  LOCKED ON TARGETS', width / 2 - 77, height - 32);
-  }
 }
 
 function loadExportImage(src) {
@@ -787,15 +812,10 @@ async function exportShot(button) {
     button.textContent = 'PNG ready · camera synced';
     return;
   }
-  let stream;
-  let requestFrame;
-  try {
-    stream = canvas.captureStream(0);
-    const videoTrack = stream.getVideoTracks()[0];
-    requestFrame = typeof videoTrack?.requestFrame === 'function' ? () => videoTrack.requestFrame() : null;
-  } catch {
-    stream = canvas.captureStream(EXPORT_FPS);
-  }
+  renderExportFrame(ctx, 0, cards, images);
+  // Capture every canvas update automatically. Manual requestFrame() capture
+  // is not supported consistently and can leave some browsers with a short clip.
+  const stream = canvas.captureStream();
   const mimeCandidates = [
     'video/mp4;codecs=avc1.42E01E',
     'video/mp4;codecs=avc1.4D002A',
@@ -821,31 +841,37 @@ async function exportShot(button) {
   const codecLabel = isH264 ? 'H.264 MP4' : 'WebM fallback';
   const chunks = [];
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-  const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
-  recorder.start();
+  const stopped = new Promise((resolve, reject) => {
+    recorder.addEventListener('stop', resolve, { once: true });
+    recorder.addEventListener('error', (event) => reject(event.error || new Error('The browser video encoder stopped unexpectedly.')), { once: true });
+  });
+  recorder.start(250);
   const frameBudget = 1000 / EXPORT_FPS;
+  const shotDuration = (TOTAL_FRAMES / EXPORT_FPS) * 1000;
   const exportStart = performance.now();
   for (let frame = 0; frame < TOTAL_FRAMES; frame += 1) {
     const targetTime = exportStart + frame * frameBudget;
     const leadIn = targetTime - performance.now();
     if (leadIn > 0) await new Promise((resolve) => setTimeout(resolve, leadIn));
     renderExportFrame(ctx, frame, cards, images);
-    requestFrame?.();
     button.textContent = `${codecLabel} ${String(frame + 1).padStart(2, '0')}/${TOTAL_FRAMES}`;
   }
+  const holdTime = exportStart + shotDuration - performance.now();
+  if (holdTime > 0) await new Promise((resolve) => setTimeout(resolve, holdTime));
+  if (recorder.state === 'recording') recorder.requestData();
   await new Promise((resolve) => setTimeout(resolve, 80));
   recorder.stop();
   await stopped;
   stream.getTracks().forEach((track) => track.stop());
   const extension = isH264 ? 'mp4' : 'webm';
   downloadBlob(new Blob(chunks, { type: mimeType }), `starmeter-shot-1920x1080-24fps-camera.${extension}`);
-  button.textContent = `${codecLabel} ready · camera synced`;
+  button.textContent = `${codecLabel} ready · ${(TOTAL_FRAMES / EXPORT_FPS).toFixed(1)} sec`;
 }
 
 document.querySelector('#exportButton').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   if (button.disabled || portraitUploadPending) return;
-  if (heroCommitTimer) commitHeroTextUpdate();
+  if (openingCommitTimer) commitOpeningTextUpdate();
   state.playing = false;
   cancelAnimationFrame(state.raf);
   playButton.textContent = '▶';
@@ -873,6 +899,7 @@ function tick(now) {
   if (state.playing) state.raf = requestAnimationFrame(tick);
 }
 
-syncHeroInputs();
+syncOpeningCopy();
+syncOpeningInputs();
 buildLane();
 if (!guideHasBeenSeen()) requestAnimationFrame(openGuide);
