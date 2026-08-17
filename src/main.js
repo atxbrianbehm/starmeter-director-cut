@@ -23,8 +23,15 @@ const PAGE_TOP = 42;
 const MOTION_BLUR_STRENGTH = 0.45;
 const MOTION_TRAIL_DISTANCE = 320;
 const SHOT_PEOPLE_STORAGE_KEY = 'starmeter-shot-people-v3';
+const SHOT_SETTINGS_STORAGE_KEY = 'starmeter-shot-settings-v1';
 const OPENING_PEOPLE_STORAGE_KEY = 'starmeter-opening-people-v2';
 const LEGACY_HERO_STORAGE_KEY = 'starmeter-opening-actor-v1';
+const EASE_MODES = Object.freeze(['exaggerated', 'smooth', 'linear']);
+const MIN_POPULATION = 24;
+const MAX_POPULATION = 360;
+const DEFAULT_POPULATION = 144;
+const DEFAULT_SETTLE_FRAME = 66;
+const DEFAULT_EASE_MODE = 'exaggerated';
 const GUIDE_SESSION_KEY = 'starmeter-dave-guide-seen-v1';
 const DEFAULT_OPENING_PEOPLE = Object.freeze([
   Object.freeze({ rank: 1420, name: 'Andy Samberg', role: 'Actor · Producer · Writer', photo: assetPath('andy-samberg-card.jpg'), tag: 'START HERE', tone: 'gold', depth: 0 }),
@@ -100,14 +107,45 @@ function loadSavedShotPeople() {
   }
 }
 
+function settleFrameBoundsFor(totalFrames) {
+  const min = Math.max(12, Math.round(totalFrames * 0.55));
+  return { min, max: Math.max(min, totalFrames - 5) };
+}
+
+function clampInt(value, min, max, fallback) {
+  const next = Math.round(Number(value));
+  if (!Number.isFinite(next)) return fallback;
+  return Math.max(min, Math.min(max, next));
+}
+
+function loadSavedShotSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHOT_SETTINGS_STORAGE_KEY));
+    if (!saved || typeof saved !== 'object') return null;
+    const totalFrames = clampInt(saved.totalFrames, MIN_TOTAL_FRAMES, MAX_TOTAL_FRAMES, DEFAULT_TOTAL_FRAMES);
+    const bounds = settleFrameBoundsFor(totalFrames);
+    const defaultSettle = Math.max(bounds.min, Math.min(bounds.max, DEFAULT_SETTLE_FRAME));
+    return {
+      totalFrames,
+      settleFrame: clampInt(saved.settleFrame, bounds.min, bounds.max, defaultSettle),
+      populationCount: clampInt(saved.populationCount, MIN_POPULATION, MAX_POPULATION, DEFAULT_POPULATION),
+      motionBlur: typeof saved.motionBlur === 'boolean' ? saved.motionBlur : true,
+      easeMode: EASE_MODES.includes(saved.easeMode) ? saved.easeMode : DEFAULT_EASE_MODE,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const savedShotSettings = loadSavedShotSettings();
 const state = {
   frame: 0,
-  totalFrames: DEFAULT_TOTAL_FRAMES,
-  settleFrame: 66,
-  populationCount: 144,
+  totalFrames: savedShotSettings?.totalFrames ?? DEFAULT_TOTAL_FRAMES,
+  settleFrame: savedShotSettings?.settleFrame ?? DEFAULT_SETTLE_FRAME,
+  populationCount: savedShotSettings?.populationCount ?? DEFAULT_POPULATION,
   shotPeople: loadSavedShotPeople(),
   editingPersonIndex: 0,
-  motionBlur: true,
+  motionBlur: savedShotSettings?.motionBlur ?? true,
   playing: false,
   raf: null,
   lastTime: 0,
@@ -260,8 +298,7 @@ function durationTimecode(frames = state.totalFrames) {
 }
 
 function settleFrameBounds(totalFrames = state.totalFrames) {
-  const min = Math.max(12, Math.round(totalFrames * 0.55));
-  return { min, max: Math.max(min, totalFrames - 5) };
+  return settleFrameBoundsFor(totalFrames);
 }
 
 function updateDurationUI({ announce = false } = {}) {
@@ -307,7 +344,36 @@ function setTotalFrames(value) {
   state.lastRenderFrame = state.frame;
   setPlaybackButton();
   updateDurationUI({ announce: true });
+  persistShotSettings();
   renderLane();
+}
+
+function persistShotSettings() {
+  try {
+    localStorage.setItem(SHOT_SETTINGS_STORAGE_KEY, JSON.stringify({
+      totalFrames: state.totalFrames,
+      settleFrame: state.settleFrame,
+      populationCount: state.populationCount,
+      motionBlur: state.motionBlur,
+      easeMode,
+    }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function syncSavedSettingsUI() {
+  const populationSlider = document.querySelector('#populationSlider');
+  if (populationSlider) populationSlider.value = state.populationCount;
+  const blurToggle = document.querySelector('#blurToggle');
+  if (blurToggle) {
+    blurToggle.classList.toggle('on', state.motionBlur);
+    blurToggle.setAttribute('aria-pressed', String(state.motionBlur));
+  }
+  document.querySelectorAll('[data-ease]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.ease === easeMode);
+  });
 }
 
 function persistShotPeople() {
@@ -429,7 +495,7 @@ function ease(t, mode) {
   return Math.max(0, Math.min(1.01, 0.88 + 0.12 * (arrival + bounce)));
 }
 
-let easeMode = 'exaggerated';
+let easeMode = savedShotSettings?.easeMode ?? DEFAULT_EASE_MODE;
 function diveProgress(frame) {
   const launch = 3;
   if (frame <= launch) return 0;
@@ -519,8 +585,8 @@ durationFramesInput.addEventListener('input', (event) => {
 });
 durationFramesInput.addEventListener('change', (event) => setTotalFrames(event.target.value));
 durationFramesInput.addEventListener('blur', () => { durationFramesInput.value = state.totalFrames; });
-settleSlider.addEventListener('input', (event) => { state.settleFrame = Number(event.target.value); renderLane(); });
-document.querySelector('#populationSlider').addEventListener('input', (event) => { state.populationCount = Number(event.target.value); buildLane(); });
+settleSlider.addEventListener('input', (event) => { state.settleFrame = Number(event.target.value); persistShotSettings(); renderLane(); });
+document.querySelector('#populationSlider').addEventListener('input', (event) => { state.populationCount = Number(event.target.value); persistShotSettings(); buildLane(); });
 
 let personCommitTimer = null;
 function commitPersonTextUpdate() {
@@ -681,8 +747,8 @@ document.querySelector('#restoreShotPerson').addEventListener('click', () => {
   buildLane();
   setPersonStatus(saved ? `${state.shotPeople[personIndex].name} restored and saved.` : `${state.shotPeople[personIndex].name} restored for this tab.`);
 });
-document.querySelectorAll('[data-ease]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-ease]').forEach((b) => b.classList.remove('active')); button.classList.add('active'); easeMode = button.dataset.ease; renderLane(); }));
-document.querySelector('#blurToggle').addEventListener('click', (event) => { state.motionBlur = !state.motionBlur; event.currentTarget.classList.toggle('on', state.motionBlur); event.currentTarget.setAttribute('aria-pressed', String(state.motionBlur)); renderLane(); });
+document.querySelectorAll('[data-ease]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-ease]').forEach((b) => b.classList.remove('active')); button.classList.add('active'); easeMode = button.dataset.ease; persistShotSettings(); renderLane(); }));
+document.querySelector('#blurToggle').addEventListener('click', (event) => { state.motionBlur = !state.motionBlur; event.currentTarget.classList.toggle('on', state.motionBlur); event.currentTarget.setAttribute('aria-pressed', String(state.motionBlur)); persistShotSettings(); renderLane(); });
 document.querySelector('#resetButton').addEventListener('click', () => { state.frame = 0; state.playing = false; cancelAnimationFrame(state.raf); setPlaybackButton(); renderLane(); });
 document.querySelector('#stepBack').addEventListener('click', () => { state.frame = Math.max(0, state.frame - 1); renderLane(); });
 document.querySelector('#stepForward').addEventListener('click', () => { state.frame = Math.min(lastFrameIndex(), state.frame + 1); renderLane(); });
@@ -1049,5 +1115,6 @@ function tick(now) {
 updateDurationUI();
 syncShotPeopleCopy();
 syncPersonInputs();
+syncSavedSettingsUI();
 buildLane();
 if (!guideHasBeenSeen()) requestAnimationFrame(openGuide);
