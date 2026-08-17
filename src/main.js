@@ -34,13 +34,13 @@ const DEFAULT_SETTLE_FRAME = 66;
 const DEFAULT_EASE_MODE = 'exaggerated';
 const GUIDE_SESSION_KEY = 'starmeter-dave-guide-seen-v1';
 const DEFAULT_OPENING_PEOPLE = Object.freeze([
-  Object.freeze({ rank: 1420, name: 'Andy Samberg', role: 'Actor Â· Producer Â· Writer', photo: assetPath('andy-samberg-card.jpg'), tag: 'START HERE', tone: 'gold', depth: 0 }),
-  Object.freeze({ rank: 1610, name: 'Matt Damon', role: 'Actor Â· Producer', photo: assetPath('matt-damon.jpg'), tag: 'NEARBY STAR', tone: 'blue', depth: 1 }),
-  Object.freeze({ rank: 1730, name: '"Weird" Al Yankovic', role: 'Actor Â· Musician Â· Writer', photo: assetPath('weird-al-yankovic.jpg'), tag: 'NEARBY STAR', tone: 'pink', depth: 2 }),
+  Object.freeze({ rank: 1420, name: 'Andy Samberg', role: 'Actor · Producer · Writer', photo: assetPath('andy-samberg-card.jpg'), tag: 'START HERE', tone: 'gold', depth: 0 }),
+  Object.freeze({ rank: 1610, name: 'Matt Damon', role: 'Actor · Producer', photo: assetPath('matt-damon.jpg'), tag: 'NEARBY STAR', tone: 'blue', depth: 1 }),
+  Object.freeze({ rank: 1730, name: '"Weird" Al Yankovic', role: 'Actor · Musician · Writer', photo: assetPath('weird-al-yankovic.jpg'), tag: 'NEARBY STAR', tone: 'pink', depth: 2 }),
 ]);
 const DEFAULT_ENDING_PEOPLE = Object.freeze([
-  Object.freeze({ rank: 243000, name: 'David James Ward', role: 'Writer Â· Producer Â· Editor', tag: 'TARGET', tone: 'target', depth: 9, photo: assetPath('david-james-ward.jpg') }),
-  Object.freeze({ rank: 654000, name: 'Brock LaBorde', role: 'Writer Â· Additional Crew Â· Producer', tag: 'TARGET', tone: 'target', depth: 10, photo: assetPath('brock-laborde.jpg') }),
+  Object.freeze({ rank: 243000, name: 'David James Ward', role: 'Writer · Producer · Editor', tag: 'TARGET', tone: 'target', depth: 9, photo: assetPath('david-james-ward.jpg') }),
+  Object.freeze({ rank: 654000, name: 'Brock LaBorde', role: 'Writer · Additional Crew · Producer', tag: 'TARGET', tone: 'target', depth: 10, photo: assetPath('brock-laborde.jpg') }),
 ]);
 const DEFAULT_SHOT_PEOPLE = Object.freeze([...DEFAULT_OPENING_PEOPLE, ...DEFAULT_ENDING_PEOPLE]);
 const SHOT_PEOPLE_LANE_INDEXES = Object.freeze([0, 1, 2, 9, 10]);
@@ -53,12 +53,12 @@ const SHOT_PEOPLE_FALLBACK_NAMES = Object.freeze(['Main actor', 'Person 2', 'Per
 const LANDING_VIEWPORT_FRACTION = 0.445;
 const people = [
   ...DEFAULT_OPENING_PEOPLE.map((person) => ({ ...person })),
-  { rank: 12840, name: 'Maya Fenn', role: 'Actor Â· Costume Designer', tag: 'WHOOSH', tone: 'green', depth: 3 },
-  { rank: 24100, name: 'Jules Moreno', role: 'Writer Â· Additional Crew', tag: 'WHOOSH', tone: 'purple', depth: 4 },
-  { rank: 48800, name: 'Talia Finch', role: 'Producer Â· Actor', tag: 'WHOOSH', tone: 'orange', depth: 5 },
-  { rank: 82000, name: 'Drew Ko', role: 'Editor Â· Writer', tag: 'WHOOSH', tone: 'teal', depth: 6 },
-  { rank: 120000, name: 'Sammy Vale', role: 'Actor Â· Director', tag: 'WHOOSH', tone: 'blue', depth: 7 },
-  { rank: 156000, name: 'Riley West', role: 'Composer Â· Actor', tag: 'WHOOSH', tone: 'pink', depth: 8 },
+  { rank: 12840, name: 'Maya Fenn', role: 'Actor · Costume Designer', tag: 'WHOOSH', tone: 'green', depth: 3 },
+  { rank: 24100, name: 'Jules Moreno', role: 'Writer · Additional Crew', tag: 'WHOOSH', tone: 'purple', depth: 4 },
+  { rank: 48800, name: 'Talia Finch', role: 'Producer · Actor', tag: 'WHOOSH', tone: 'orange', depth: 5 },
+  { rank: 82000, name: 'Drew Ko', role: 'Editor · Writer', tag: 'WHOOSH', tone: 'teal', depth: 6 },
+  { rank: 120000, name: 'Sammy Vale', role: 'Actor · Director', tag: 'WHOOSH', tone: 'blue', depth: 7 },
+  { rank: 156000, name: 'Riley West', role: 'Composer · Actor', tag: 'WHOOSH', tone: 'pink', depth: 8 },
   ...DEFAULT_ENDING_PEOPLE.map((person) => ({ ...person })),
 ];
 
@@ -156,11 +156,11 @@ const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="guide-backdrop" id="daveGuide" hidden>
     <section class="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guideTitle" aria-describedby="guideIntro">
-      <div class="guide-kicker"><span>SHOT / 07 Â· V3</span><span id="guideDurationSummary">81 frames / 3.375 sec</span></div>
-      <h1 id="guideTitle">Dave, hereâ€™s your STARmeter shot.</h1>
+      <div class="guide-kicker"><span>SHOT / 07 · V3</span><span id="guideDurationSummary">81 frames / 3.375 sec</span></div>
+      <h1 id="guideTitle">Dave, here’s your STARmeter shot.</h1>
       <p id="guideIntro">Everything you need is on this screen. Set any of the five named people, audition the move, then export the finished take.</p>
       <ol class="guide-steps">
-        <li><span>1</span><div><strong>Set the named people</strong><p>Choose any opening or ending card, then change its name, credits, ranking, and portraitâ€”including your own headshot. The preview and export stay in sync.</p></div></li>
+        <li><span>1</span><div><strong>Set the named people</strong><p>Choose any opening or ending card, then change its name, credits, ranking, and portrait—including your own headshot. The preview and export stay in sync.</p></div></li>
         <li><span>2</span><div><strong>Audition the scroll</strong><p>Press play or drag the timeline. Set the shot duration in frames, then adjust the settle frame, crowd length, scroll feel, and motion blur.</p></div></li>
         <li><span>3</span><div><strong>Export the full take</strong><p>Click <em id="guideExportLabel">Export 3.4 sec MP4</em>. Every downloaded frame receives an exact 24 fps timestamp. Replacement portraits stay in this browser.</p></div></li>
       </ol>
@@ -173,28 +173,28 @@ app.innerHTML = `
   </div>
   <main class="shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">âœ¦</span><span>STAR<span>meter</span></span></div>
-      <div class="project-name"><span class="eyebrow">SHOT / 07 Â· V3</span><strong>The Great Dive</strong></div>
+      <div class="brand"><span class="brand-mark">✦</span><span>STAR<span>meter</span></span></div>
+      <div class="project-name"><span class="eyebrow">SHOT / 07 · V3</span><strong>The Great Dive</strong></div>
       <div class="top-actions"><button class="ghost-button" id="guideButton">How to use</button><button class="ghost-button" id="soundButton">Sound: off</button><button class="export-button" id="exportButton">Export 3.4 sec MP4</button></div>
     </header>
     <section class="workspace">
       <div class="stage-column">
-        <div class="stage-header"><div><span class="eyebrow">WEB PAGE SCROLL / 1920 Ã— 1080</span><h1>Scroll through the STARmeter.</h1></div><div class="frame-readout"><span id="frameReadout">F 000</span><span class="divider">/</span><span id="totalFramesReadout">81 FRAMES</span></div></div>
+        <div class="stage-header"><div><span class="eyebrow">WEB PAGE SCROLL / 1920 × 1080</span><h1>Scroll through the STARmeter.</h1></div><div class="frame-readout"><span id="frameReadout">F 000</span><span class="divider">/</span><span id="totalFramesReadout">81 FRAMES</span></div></div>
         <div class="stage-wrap">
           <div class="stage" id="stage">
             <div class="stage-grid"></div>
             <div class="stage-vignette"></div>
             <div class="speed-lines" id="speedLines"></div>
             <div class="page-surface" id="pageSurface">
-              <div class="site-nav"><div class="site-logo"><span class="site-logo-mark">âœ¦</span>STAR<span>meter</span></div><span class="site-page-title">Most popular celebrities</span><span class="site-menu">â€¢â€¢â€¢</span></div>
+              <div class="site-nav"><div class="site-logo"><span class="site-logo-mark">✦</span>STAR<span>meter</span></div><span class="site-page-title">Most popular celebrities</span><span class="site-menu">•••</span></div>
               <div class="site-subnav"><span>As determined by IMDb users</span><span>100 People&nbsp;&nbsp; / &nbsp;&nbsp;Sorted by Popularity</span></div>
               <div class="rank-ghost" id="rankGhostA" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostB" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostC" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostD" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostE" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostF" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostG" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostH" aria-hidden="true"></div><div class="rank-lane" id="rankLane"></div>
             </div>
-            <div class="stage-hud"><span class="hud-pill">â— WEB PAGE / LIVE SCROLL</span><span class="hud-pill muted" id="hudDuration">24 FPS Â· 00:03:09</span></div>
+            <div class="stage-hud"><span class="hud-pill">● WEB PAGE / LIVE SCROLL</span><span class="hud-pill muted" id="hudDuration">24 FPS · 00:03:09</span></div>
           </div>
         </div>
         <div class="timeline-card">
-          <div class="timeline-controls"><button class="play-button" id="playButton" aria-label="Play">â–¶</button><div class="transport"><button id="stepBack" aria-label="Previous frame">â†¼</button><button id="stepForward" aria-label="Next frame">â‡</button><button id="resetButton">Reset</button></div><div class="timeline-meta"><span id="timelineLabel">Frame 0 / 80</span><span id="timingLabel">settles on F66</span></div></div>
+          <div class="timeline-controls"><button class="play-button" id="playButton" aria-label="Play">▶</button><div class="transport"><button id="stepBack" aria-label="Previous frame">↼</button><button id="stepForward" aria-label="Next frame">⇁</button><button id="resetButton">Reset</button></div><div class="timeline-meta"><span id="timelineLabel">Frame 0 / 80</span><span id="timingLabel">settles on F66</span></div></div>
           <div class="timeline-strip" id="timelineStrip">
             <div class="timeline-ruler"><span>0f</span><span>25%</span><span>50%</span><span>75%</span><span id="timelineEndTick">80f</span></div>
             <div class="timeline-fill" id="timelineFill"></div><div class="timeline-target" id="timelineTargetA" style="left:76.5%"></div><div class="timeline-target" id="timelineTargetB" style="left:81.5%"></div><div class="timeline-playhead" id="timelinePlayhead"><i></i></div>
@@ -203,7 +203,7 @@ app.innerHTML = `
         </div>
       </div>
       <aside class="inspector">
-        <div class="inspector-head"><div><span class="eyebrow">PAGE SCROLL CONTROLS</span><h2>Scroll take</h2></div><span class="status-dot">â— READY</span></div>
+        <div class="inspector-head"><div><span class="eyebrow">PAGE SCROLL CONTROLS</span><h2>Scroll take</h2></div><span class="status-dot">● READY</span></div>
         <div class="control-block duration-control"><div class="control-label"><span>SHOT DURATION</span><strong id="durationSeconds">3.375 SEC</strong></div><label class="duration-input"><span>FRAMES</span><input id="durationFrames" type="number" min="48" max="240" value="81" step="1" inputmode="numeric" aria-label="Shot duration in frames" /><small>at 24 fps</small></label><div class="helper"><span>48f minimum</span><span>default 81f</span><span>240f maximum</span></div></div>
         <div class="control-block"><div class="control-label"><span>SETTLE FRAME</span><strong id="settleValue">66</strong></div><input id="settleSlider" type="range" min="45" max="76" value="66" aria-label="Settle frame" /><div class="helper"><span>fast</span><span id="breathingFrames">15 frames of breathing room</span><span>late</span></div></div>
         <div class="control-block"><div class="control-label"><span>SCROLL CHARACTER</span><strong>EASE-IN + BOUNCE</strong></div><div class="segmented"><button class="active" data-ease="exaggerated">Ease + bounce</button><button data-ease="smooth">Smooth</button><button data-ease="linear">Linear</button></div></div>
@@ -225,10 +225,10 @@ app.innerHTML = `
           </div>
           <div class="cue-footer"><span>5 NAMED CARDS</span><span id="starCount">83 STARS</span></div>
         </div>
-        <div class="export-spec"><span class="eyebrow">EXPORT GUARANTEE</span><strong id="exportDurationSpec">81 frames Â· 24 fps Â· 3.375 sec</strong><p>Every frame is timestamped before the H.264 MP4 is downloaded.</p><span id="exportStatus" aria-live="polite">Ready for a full-length export.</span></div>
+        <div class="export-spec"><span class="eyebrow">EXPORT GUARANTEE</span><strong id="exportDurationSpec">81 frames · 24 fps · 3.375 sec</strong><p>Every frame is timestamped before the H.264 MP4 is downloaded.</p><span id="exportStatus" aria-live="polite">Ready for a full-length export.</span></div>
       </aside>
     </section>
-    <footer class="footer-note"><span>STARmeter / editorial motion study</span><span>drag the playhead Â· press space to play</span></footer>
+    <footer class="footer-note"><span>STARmeter / editorial motion study</span><span>drag the playhead · press space to play</span></footer>
   </main>
 `;
 
@@ -287,7 +287,7 @@ function exportButtonLabel() {
 }
 
 function setPlaybackButton() {
-  playButton.textContent = state.playing ? 'âšâš' : 'â–¶';
+  playButton.textContent = state.playing ? '❚❚' : '▶';
   playButton.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
 }
 
@@ -308,17 +308,17 @@ function updateDurationUI({ announce = false } = {}) {
   durationFramesInput.value = state.totalFrames;
   durationSeconds.textContent = `${preciseSeconds} SEC`;
   totalFramesReadout.textContent = `${state.totalFrames} FRAMES`;
-  hudDuration.textContent = `${EXPORT_FPS} FPS Â· ${durationTimecode()}`;
+  hudDuration.textContent = `${EXPORT_FPS} FPS · ${durationTimecode()}`;
   timelineEndTick.textContent = `${lastFrameIndex()}f`;
   scrubber.max = lastFrameIndex();
   settleSlider.min = min;
   settleSlider.max = max;
   settleSlider.value = state.settleFrame;
-  exportDurationSpec.textContent = `${state.totalFrames} frames Â· ${EXPORT_FPS} fps Â· ${preciseSeconds} sec`;
+  exportDurationSpec.textContent = `${state.totalFrames} frames · ${EXPORT_FPS} fps · ${preciseSeconds} sec`;
   guideDurationSummary.textContent = `${state.totalFrames} frames / ${preciseSeconds} sec`;
   guideExportLabel.textContent = exportButtonLabel();
   if (!exportButton.disabled) exportButton.textContent = exportButtonLabel();
-  if (announce) exportStatus.textContent = `Ready to export ${state.totalFrames} frames at ${EXPORT_FPS} fps Â· ${preciseSeconds} sec.`;
+  if (announce) exportStatus.textContent = `Ready to export ${state.totalFrames} frames at ${EXPORT_FPS} fps · ${preciseSeconds} sec.`;
 }
 
 function setTotalFrames(value) {
@@ -551,7 +551,7 @@ function createCard(person, index) {
   const safeRole = escapeHtml(person.role);
   const safePhoto = escapeHtml(person.photo || '');
   const initials = escapeHtml(person.name.split(' ').map((x) => x[0]).slice(0, 2).join(''));
-  card.innerHTML = `${person.photo ? `<img src="${safePhoto}" alt="${safeName}" />` : `<div class="avatar"><span>${initials}</span></div>`}<div class="card-copy"><div class="rank-line"><span>#${person.rank.toLocaleString()}</span><span class="trend">${person.tag === 'TARGET' ? 'â†“' : 'â†—'}</span></div><h3>${safeName}</h3><p>${safeRole}</p></div>`;
+  card.innerHTML = `${person.photo ? `<img src="${safePhoto}" alt="${safeName}" />` : `<div class="avatar"><span>${initials}</span></div>`}<div class="card-copy"><div class="rank-line"><span>#${person.rank.toLocaleString()}</span><span class="trend">${person.tag === 'TARGET' ? '↓' : '↗'}</span></div><h3>${safeName}</h3><p>${safeRole}</p></div>`;
   return card;
 }
 function buildLane() {
@@ -710,7 +710,7 @@ personUploadInput.addEventListener('change', async (event) => {
   const personName = state.shotPeople[personIndex].name;
   pendingPortraitSlots.add(personIndex);
   updatePortraitPendingState();
-  setPersonStatus(`Preparing ${personName}'s portraitâ€¦`);
+  setPersonStatus(`Preparing ${personName}'s portrait…`);
   try {
     const photo = await preparePortrait(file);
     if (requestId !== portraitRequestIds[personIndex]) return;
@@ -808,7 +808,7 @@ function readCameraZoom() {
 function fitCanvasText(ctx, value, maxWidth) {
   const text = String(value);
   if (ctx.measureText(text).width <= maxWidth) return text;
-  const suffix = 'â€¦';
+  const suffix = '…';
   let low = 0;
   let high = text.length;
   while (low < high) {
@@ -1005,14 +1005,14 @@ async function exportShot(button) {
   const cards = exportCards();
   const images = new Map();
   button.textContent = 'Loading portraits';
-  exportStatus.textContent = 'Loading the portraits for this takeâ€¦';
+  exportStatus.textContent = 'Loading the portraits for this take…';
   const sources = [...new Set(cards.map((person) => person.photo).filter(Boolean))];
   const loaded = await Promise.all(sources.map(async (src) => [src, await loadExportImage(src)]));
   loaded.forEach(([src, image]) => images.set(src, image));
   if (document.fonts?.ready) await document.fonts.ready;
 
   button.textContent = 'Checking H.264';
-  exportStatus.textContent = 'Checking this browserâ€™s frame-addressed H.264 encoderâ€¦';
+  exportStatus.textContent = 'Checking this browser’s frame-addressed H.264 encoder…';
   const codec = await getFirstEncodableVideoCodec(['avc'], {
     width: EXPORT_WIDTH,
     height: EXPORT_HEIGHT,
@@ -1052,8 +1052,8 @@ async function exportShot(button) {
   const durationLabel = shotSeconds.toFixed(3);
   const filename = `starmeter-shot-v3-${totalFrames}f-${durationLabel}s-1920x1080.mp4`;
   downloadBlob(new Blob([target.buffer], { type: 'video/mp4' }), filename);
-  button.textContent = `MP4 ready Â· ${durationLabel} sec`;
-  exportStatus.textContent = `Downloaded ${filename} Â· ${totalFrames} frames Â· ${EXPORT_FPS} fps Â· ${durationLabel} sec.`;
+  button.textContent = `MP4 ready · ${durationLabel} sec`;
+  exportStatus.textContent = `Downloaded ${filename} · ${totalFrames} frames · ${EXPORT_FPS} fps · ${durationLabel} sec.`;
 }
 
 document.querySelector('#exportButton').addEventListener('click', async (event) => {
