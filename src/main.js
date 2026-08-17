@@ -1,7 +1,16 @@
 import './styles.css';
+import {
+  BufferTarget,
+  CanvasSource,
+  Mp4OutputFormat,
+  Output,
+  getFirstEncodableVideoCodec,
+} from 'mediabunny';
 
 const assetPath = (filename) => `${import.meta.env.BASE_URL}assets/${filename}`;
-const TOTAL_FRAMES = 81;
+const DEFAULT_TOTAL_FRAMES = 81;
+const MIN_TOTAL_FRAMES = 48;
+const MAX_TOTAL_FRAMES = 240;
 const EXPORT_WIDTH = 1920;
 const EXPORT_HEIGHT = 1080;
 const EXPORT_FPS = 24;
@@ -13,6 +22,7 @@ const PAGE_TOP = 42;
 // into a soft, uniformly blurred plate.
 const MOTION_BLUR_STRENGTH = 0.45;
 const MOTION_TRAIL_DISTANCE = 320;
+const SHOT_PEOPLE_STORAGE_KEY = 'starmeter-shot-people-v3';
 const OPENING_PEOPLE_STORAGE_KEY = 'starmeter-opening-people-v2';
 const LEGACY_HERO_STORAGE_KEY = 'starmeter-opening-actor-v1';
 const GUIDE_SESSION_KEY = 'starmeter-dave-guide-seen-v1';
@@ -21,6 +31,13 @@ const DEFAULT_OPENING_PEOPLE = Object.freeze([
   Object.freeze({ rank: 1610, name: 'Matt Damon', role: 'Actor · Producer', photo: assetPath('matt-damon.jpg'), tag: 'NEARBY STAR', tone: 'blue', depth: 1 }),
   Object.freeze({ rank: 1730, name: '"Weird" Al Yankovic', role: 'Actor · Musician · Writer', photo: assetPath('weird-al-yankovic.jpg'), tag: 'NEARBY STAR', tone: 'pink', depth: 2 }),
 ]);
+const DEFAULT_ENDING_PEOPLE = Object.freeze([
+  Object.freeze({ rank: 243000, name: 'David James Ward', role: 'Writer · Producer · Editor', tag: 'TARGET', tone: 'target', depth: 9, photo: assetPath('david-james-ward.jpg') }),
+  Object.freeze({ rank: 654000, name: 'Brock LaBorde', role: 'Writer · Additional Crew · Producer', tag: 'TARGET', tone: 'target', depth: 10, photo: assetPath('brock-laborde.jpg') }),
+]);
+const DEFAULT_SHOT_PEOPLE = Object.freeze([...DEFAULT_OPENING_PEOPLE, ...DEFAULT_ENDING_PEOPLE]);
+const SHOT_PEOPLE_LANE_INDEXES = Object.freeze([0, 1, 2, 9, 10]);
+const SHOT_PEOPLE_FALLBACK_NAMES = Object.freeze(['Main actor', 'Person 2', 'Person 3', 'Ending person 1', 'Ending person 2']);
 // Keep the final target pair centered in the clipped browser viewport. This
 // is intentionally a little tighter than the scroll's general page framing
 // so the landing reads as a deliberate lock-on instead of stopping low.
@@ -35,8 +52,7 @@ const people = [
   { rank: 82000, name: 'Drew Ko', role: 'Editor · Writer', tag: 'WHOOSH', tone: 'teal', depth: 6 },
   { rank: 120000, name: 'Sammy Vale', role: 'Actor · Director', tag: 'WHOOSH', tone: 'blue', depth: 7 },
   { rank: 156000, name: 'Riley West', role: 'Composer · Actor', tag: 'WHOOSH', tone: 'pink', depth: 8 },
-  { rank: 243000, name: 'David James Ward', role: 'Writer · Producer · Editor', tag: 'TARGET', tone: 'target', depth: 9, photo: assetPath('david-james-ward.jpg') },
-  { rank: 654000, name: 'Brock LaBorde', role: 'Writer · Additional Crew · Producer', tag: 'TARGET', tone: 'target', depth: 10, photo: assetPath('brock-laborde.jpg') },
+  ...DEFAULT_ENDING_PEOPLE.map((person) => ({ ...person })),
 ];
 
 const crowdNames = ['Nico Vale', 'Bex Wilder', 'Ari North', 'Jojo Glass', 'Kit Mercer', 'Luca Bloom', 'Tess Orbit', 'Cory Voss', 'Mina Park', 'Rae Wilder'];
@@ -56,7 +72,7 @@ people.forEach((person, index) => {
   if (!person.photo) person.photo = portraitPath(index + 4);
 });
 
-function normalizeOpeningPerson(value, fallback) {
+function normalizeShotPerson(value, fallback) {
   if (!value || typeof value !== 'object') return { ...fallback };
   return {
     ...fallback,
@@ -67,25 +83,30 @@ function normalizeOpeningPerson(value, fallback) {
   };
 }
 
-function loadSavedOpeningPeople() {
+function loadSavedShotPeople() {
   try {
+    const savedShotPeople = JSON.parse(localStorage.getItem(SHOT_PEOPLE_STORAGE_KEY));
+    if (Array.isArray(savedShotPeople) && savedShotPeople.length >= DEFAULT_SHOT_PEOPLE.length) {
+      return DEFAULT_SHOT_PEOPLE.map((fallback, index) => normalizeShotPerson(savedShotPeople[index], fallback));
+    }
     const saved = JSON.parse(localStorage.getItem(OPENING_PEOPLE_STORAGE_KEY));
     if (Array.isArray(saved) && saved.length >= DEFAULT_OPENING_PEOPLE.length) {
-      return DEFAULT_OPENING_PEOPLE.map((fallback, index) => normalizeOpeningPerson(saved[index], fallback));
+      return DEFAULT_SHOT_PEOPLE.map((fallback, index) => normalizeShotPerson(index < DEFAULT_OPENING_PEOPLE.length ? saved[index] : null, fallback));
     }
     const legacyHero = JSON.parse(localStorage.getItem(LEGACY_HERO_STORAGE_KEY));
-    return DEFAULT_OPENING_PEOPLE.map((fallback, index) => normalizeOpeningPerson(index === 0 ? legacyHero : null, fallback));
+    return DEFAULT_SHOT_PEOPLE.map((fallback, index) => normalizeShotPerson(index === 0 ? legacyHero : null, fallback));
   } catch {
-    return DEFAULT_OPENING_PEOPLE.map((person) => ({ ...person }));
+    return DEFAULT_SHOT_PEOPLE.map((person) => ({ ...person }));
   }
 }
 
 const state = {
   frame: 0,
+  totalFrames: DEFAULT_TOTAL_FRAMES,
   settleFrame: 66,
   populationCount: 144,
-  openingPeople: loadSavedOpeningPeople(),
-  editingOpeningIndex: 0,
+  shotPeople: loadSavedShotPeople(),
+  editingPersonIndex: 0,
   motionBlur: true,
   playing: false,
   raf: null,
@@ -97,16 +118,16 @@ const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="guide-backdrop" id="daveGuide" hidden>
     <section class="guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guideTitle" aria-describedby="guideIntro">
-      <div class="guide-kicker"><span>SHOT / 07</span><span>2-minute setup</span></div>
+      <div class="guide-kicker"><span>SHOT / 07 · V3</span><span id="guideDurationSummary">81 frames / 3.375 sec</span></div>
       <h1 id="guideTitle">Dave, here’s your STARmeter shot.</h1>
-      <p id="guideIntro">Everything you need is on this screen. Set the three opening people, audition the move, then export the finished take.</p>
+      <p id="guideIntro">Everything you need is on this screen. Set any of the five named people, audition the move, then export the finished take.</p>
       <ol class="guide-steps">
-        <li><span>1</span><div><strong>Set the opening people</strong><p>Choose <em>Main actor</em>, <em>Person 2</em>, or <em>Person 3</em>, then change the name, credits, ranking, and portrait. The preview and export stay in sync.</p></div></li>
-        <li><span>2</span><div><strong>Audition the scroll</strong><p>Press play or drag the timeline. Adjust the settle frame, crowd length, scroll feel, and motion blur on the right.</p></div></li>
-        <li><span>3</span><div><strong>Export the take</strong><p>Click <em>Export shot</em> when it feels right. Your replacement portraits stay in this browser and are used only for the shot.</p></div></li>
+        <li><span>1</span><div><strong>Set the named people</strong><p>Choose any opening or ending card, then change its name, credits, ranking, and portrait—including your own headshot. The preview and export stay in sync.</p></div></li>
+        <li><span>2</span><div><strong>Audition the scroll</strong><p>Press play or drag the timeline. Set the shot duration in frames, then adjust the settle frame, crowd length, scroll feel, and motion blur.</p></div></li>
+        <li><span>3</span><div><strong>Export the full take</strong><p>Click <em id="guideExportLabel">Export 3.4 sec MP4</em>. Every downloaded frame receives an exact 24 fps timestamp. Replacement portraits stay in this browser.</p></div></li>
       </ol>
       <div class="guide-actions">
-        <button class="guide-primary" id="guideActorButton">Change opening people</button>
+        <button class="guide-primary" id="guideActorButton">Change shot people</button>
         <button class="guide-secondary" id="guideDismissButton">Open the editor</button>
       </div>
       <p class="guide-replay">You can reopen this guide anytime from <strong>How to use</strong>.</p>
@@ -115,12 +136,12 @@ app.innerHTML = `
   <main class="shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">✦</span><span>STAR<span>meter</span></span></div>
-      <div class="project-name"><span class="eyebrow">SHOT / 07</span><strong>The Great Dive</strong></div>
-      <div class="top-actions"><button class="ghost-button" id="guideButton">How to use</button><button class="ghost-button" id="soundButton">Sound: off</button><button class="export-button" id="exportButton">Export shot</button></div>
+      <div class="project-name"><span class="eyebrow">SHOT / 07 · V3</span><strong>The Great Dive</strong></div>
+      <div class="top-actions"><button class="ghost-button" id="guideButton">How to use</button><button class="ghost-button" id="soundButton">Sound: off</button><button class="export-button" id="exportButton">Export 3.4 sec MP4</button></div>
     </header>
     <section class="workspace">
       <div class="stage-column">
-        <div class="stage-header"><div><span class="eyebrow">WEB PAGE SCROLL / 1920 × 1080</span><h1>Scroll through the STARmeter.</h1></div><div class="frame-readout"><span id="frameReadout">F 000</span><span class="divider">/</span><span>81 FRAMES</span></div></div>
+        <div class="stage-header"><div><span class="eyebrow">WEB PAGE SCROLL / 1920 × 1080</span><h1>Scroll through the STARmeter.</h1></div><div class="frame-readout"><span id="frameReadout">F 000</span><span class="divider">/</span><span id="totalFramesReadout">81 FRAMES</span></div></div>
         <div class="stage-wrap">
           <div class="stage" id="stage">
             <div class="stage-grid"></div>
@@ -131,26 +152,42 @@ app.innerHTML = `
               <div class="site-subnav"><span>As determined by IMDb users</span><span>100 People&nbsp;&nbsp; / &nbsp;&nbsp;Sorted by Popularity</span></div>
               <div class="rank-ghost" id="rankGhostA" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostB" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostC" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostD" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostE" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostF" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostG" aria-hidden="true"></div><div class="rank-ghost" id="rankGhostH" aria-hidden="true"></div><div class="rank-lane" id="rankLane"></div>
             </div>
-            <div class="stage-hud"><span class="hud-pill">● WEB PAGE / LIVE SCROLL</span><span class="hud-pill muted">24 FPS · 00:03:09</span></div>
+            <div class="stage-hud"><span class="hud-pill">● WEB PAGE / LIVE SCROLL</span><span class="hud-pill muted" id="hudDuration">24 FPS · 00:03:09</span></div>
           </div>
         </div>
         <div class="timeline-card">
-          <div class="timeline-controls"><button class="play-button" id="playButton" aria-label="Play">▶</button><div class="transport"><button id="stepBack" aria-label="Previous frame">↼</button><button id="stepForward" aria-label="Next frame">⇁</button><button id="resetButton">Reset</button></div><div class="timeline-meta"><span id="timelineLabel">Frame 0 / 81</span><span id="timingLabel">settles on F66</span></div></div>
+          <div class="timeline-controls"><button class="play-button" id="playButton" aria-label="Play">▶</button><div class="transport"><button id="stepBack" aria-label="Previous frame">↼</button><button id="stepForward" aria-label="Next frame">⇁</button><button id="resetButton">Reset</button></div><div class="timeline-meta"><span id="timelineLabel">Frame 0 / 80</span><span id="timingLabel">settles on F66</span></div></div>
           <div class="timeline-strip" id="timelineStrip">
-            <div class="timeline-ruler"><span>0f</span><span>20f</span><span>40f</span><span>60f</span><span>81f</span></div>
-            <div class="timeline-fill" id="timelineFill"></div><div class="timeline-target" style="left:76.5%"></div><div class="timeline-target" style="left:81.5%"></div><div class="timeline-playhead" id="timelinePlayhead"><i></i></div>
-            <input class="scrubber" id="scrubber" type="range" min="0" max="81" value="0" step="1" aria-label="Shot frame" />
+            <div class="timeline-ruler"><span>0f</span><span>25%</span><span>50%</span><span>75%</span><span id="timelineEndTick">80f</span></div>
+            <div class="timeline-fill" id="timelineFill"></div><div class="timeline-target" id="timelineTargetA" style="left:76.5%"></div><div class="timeline-target" id="timelineTargetB" style="left:81.5%"></div><div class="timeline-playhead" id="timelinePlayhead"><i></i></div>
+            <input class="scrubber" id="scrubber" type="range" min="0" max="80" value="0" step="1" aria-label="Shot frame" />
           </div>
         </div>
       </div>
       <aside class="inspector">
         <div class="inspector-head"><div><span class="eyebrow">PAGE SCROLL CONTROLS</span><h2>Scroll take</h2></div><span class="status-dot">● READY</span></div>
-        <div class="control-block"><div class="control-label"><span>SETTLE FRAME</span><strong id="settleValue">66</strong></div><input id="settleSlider" type="range" min="45" max="76" value="66" aria-label="Settle frame" /><div class="helper"><span>fast</span><span>15 frames of breathing room</span><span>late</span></div></div>
+        <div class="control-block duration-control"><div class="control-label"><span>SHOT DURATION</span><strong id="durationSeconds">3.375 SEC</strong></div><label class="duration-input"><span>FRAMES</span><input id="durationFrames" type="number" min="48" max="240" value="81" step="1" inputmode="numeric" aria-label="Shot duration in frames" /><small>at 24 fps</small></label><div class="helper"><span>48f minimum</span><span>default 81f</span><span>240f maximum</span></div></div>
+        <div class="control-block"><div class="control-label"><span>SETTLE FRAME</span><strong id="settleValue">66</strong></div><input id="settleSlider" type="range" min="45" max="76" value="66" aria-label="Settle frame" /><div class="helper"><span>fast</span><span id="breathingFrames">15 frames of breathing room</span><span>late</span></div></div>
         <div class="control-block"><div class="control-label"><span>SCROLL CHARACTER</span><strong>EASE-IN + BOUNCE</strong></div><div class="segmented"><button class="active" data-ease="exaggerated">Ease + bounce</button><button data-ease="smooth">Smooth</button><button data-ease="linear">Linear</button></div></div>
         <div class="control-block"><div class="control-label"><span>IN-BETWEEN PEOPLE</span><strong id="populationValue">144</strong></div><input id="populationSlider" type="range" min="24" max="360" value="144" step="1" aria-label="Number of in-between people" /><div class="helper"><span>short</span><span>generated crowd</span><span>long</span></div></div>
         <div class="control-block"><div class="toggle-row"><div><span class="control-label">MOTION BLUR</span><p>Stretch the crowd into a comic-book smear.</p></div><button class="toggle on" id="blurToggle" aria-label="Motion blur" aria-pressed="true"><span></span></button></div></div>
-        <div class="cue-card" id="openingControls"><span class="eyebrow">OPENING PEOPLE</span><p>Choose one of the first three cards, then change its details and portrait.</p><div class="opening-tabs" role="tablist" aria-label="Opening people"><button class="opening-tab active" type="button" role="tab" aria-selected="true" data-opening-index="0"><span>Main actor</span><strong id="openingTabName0">Andy</strong></button><button class="opening-tab" type="button" role="tab" aria-selected="false" data-opening-index="1"><span>Person 2</span><strong id="openingTabName1">Matt</strong></button><button class="opening-tab" type="button" role="tab" aria-selected="false" data-opening-index="2"><span>Person 3</span><strong id="openingTabName2">Weird Al</strong></button></div><div class="actor-fields"><label><span>Name</span><input id="openingName" type="text" maxlength="80" autocomplete="off" /></label><label><span>Credits</span><input id="openingRole" type="text" maxlength="100" autocomplete="off" /></label><label><span>STARmeter rank</span><input id="openingRank" type="number" min="1" max="9999999" inputmode="numeric" /></label></div><div class="actor-actions"><label class="upload-button" tabindex="0" role="button"><span>Replace portrait</span><input id="openingUpload" type="file" accept="image/*" tabindex="-1" /></label><button class="restore-button" id="restoreOpeningPerson" type="button">Restore this card</button></div><p class="actor-status" id="openingStatus" aria-live="polite">Changes are saved in this browser.</p><div class="cue-footer"><span>3 OPENING CARDS</span><span id="starCount">83 STARS</span></div></div>
-        <div class="target-list"><div class="eyebrow">ENDING CARDS</div><div class="target-row"><span class="marker-ring"></span><div><strong>David James Ward</strong><small>writer · rank 243K</small></div><span class="target-frame">F 62</span></div><div class="target-row"><span class="marker-ring"></span><div><strong>Brock LaBorde</strong><small>writer · rank 654K</small></div><span class="target-frame">F 66</span></div></div>
+        <div class="cue-card" id="shotPeopleControls">
+          <span class="eyebrow">SHOT PEOPLE</span><p>Choose any named card, then change its details and portrait.</p>
+          <div class="people-tabs" role="tablist" aria-label="Named shot people">
+            <button class="people-tab active" id="personTab0" type="button" role="tab" aria-selected="true" aria-controls="shotPersonPanel" data-person-index="0"><span>Main actor</span><strong id="personTabName0">Andy</strong></button>
+            <button class="people-tab" id="personTab1" type="button" role="tab" aria-selected="false" aria-controls="shotPersonPanel" data-person-index="1"><span>Opening 2</span><strong id="personTabName1">Matt</strong></button>
+            <button class="people-tab" id="personTab2" type="button" role="tab" aria-selected="false" aria-controls="shotPersonPanel" data-person-index="2"><span>Opening 3</span><strong id="personTabName2">Weird Al</strong></button>
+            <button class="people-tab" id="personTab3" type="button" role="tab" aria-selected="false" aria-controls="shotPersonPanel" data-person-index="3"><span>Ending 1</span><strong id="personTabName3">David</strong></button>
+            <button class="people-tab" id="personTab4" type="button" role="tab" aria-selected="false" aria-controls="shotPersonPanel" data-person-index="4"><span>Ending 2</span><strong id="personTabName4">Brock</strong></button>
+          </div>
+          <div class="shot-person-panel" id="shotPersonPanel" role="tabpanel" aria-labelledby="personTab0">
+            <div class="actor-fields"><label><span>Name</span><input id="personName" type="text" maxlength="80" autocomplete="off" /></label><label><span>Credits</span><input id="personRole" type="text" maxlength="100" autocomplete="off" /></label><label><span>STARmeter rank</span><input id="personRank" type="number" min="1" max="9999999" inputmode="numeric" /></label></div>
+            <div class="actor-actions"><label class="upload-button" tabindex="0" role="button"><span>Replace portrait</span><input id="personUpload" type="file" accept="image/*" tabindex="-1" /></label><button class="restore-button" id="restoreShotPerson" type="button">Restore this card</button></div>
+            <p class="actor-status" id="personStatus" aria-live="polite">Changes are saved in this browser.</p>
+          </div>
+          <div class="cue-footer"><span>5 NAMED CARDS</span><span id="starCount">83 STARS</span></div>
+        </div>
+        <div class="export-spec"><span class="eyebrow">EXPORT GUARANTEE</span><strong id="exportDurationSpec">81 frames · 24 fps · 3.375 sec</strong><p>Every frame is timestamped before the H.264 MP4 is downloaded.</p><span id="exportStatus" aria-live="polite">Ready for a full-length export.</span></div>
       </aside>
     </section>
     <footer class="footer-note"><span>STARmeter / editorial motion study</span><span>drag the playhead · press space to play</span></footer>
@@ -170,6 +207,15 @@ const frameReadout = document.querySelector('#frameReadout');
 const timelineLabel = document.querySelector('#timelineLabel');
 const timingLabel = document.querySelector('#timingLabel');
 const scrubber = document.querySelector('#scrubber');
+const durationFramesInput = document.querySelector('#durationFrames');
+const durationSeconds = document.querySelector('#durationSeconds');
+const settleSlider = document.querySelector('#settleSlider');
+const breathingFrames = document.querySelector('#breathingFrames');
+const totalFramesReadout = document.querySelector('#totalFramesReadout');
+const hudDuration = document.querySelector('#hudDuration');
+const timelineEndTick = document.querySelector('#timelineEndTick');
+const timelineTargetA = document.querySelector('#timelineTargetA');
+const timelineTargetB = document.querySelector('#timelineTargetB');
 const stage = document.querySelector('#stage');
 const pageSurface = document.querySelector('#pageSurface');
 pageSurface.style.setProperty('--camera-zoom', String(CAMERA_ZOOM));
@@ -177,47 +223,127 @@ const playButton = document.querySelector('#playButton');
 const timelinePlayhead = document.querySelector('#timelinePlayhead');
 const timelineFill = document.querySelector('#timelineFill');
 const daveGuide = document.querySelector('#daveGuide');
-const openingControls = document.querySelector('#openingControls');
-const openingNameInput = document.querySelector('#openingName');
-const openingRoleInput = document.querySelector('#openingRole');
-const openingRankInput = document.querySelector('#openingRank');
-const openingStatus = document.querySelector('#openingStatus');
+const shotPeopleControls = document.querySelector('#shotPeopleControls');
+const shotPersonPanel = document.querySelector('#shotPersonPanel');
+const personNameInput = document.querySelector('#personName');
+const personRoleInput = document.querySelector('#personRole');
+const personRankInput = document.querySelector('#personRank');
+const personStatus = document.querySelector('#personStatus');
 const exportButton = document.querySelector('#exportButton');
+const exportStatus = document.querySelector('#exportStatus');
+const exportDurationSpec = document.querySelector('#exportDurationSpec');
+const guideDurationSummary = document.querySelector('#guideDurationSummary');
+const guideExportLabel = document.querySelector('#guideExportLabel');
 let guideReturnFocus = null;
 
-function persistOpeningPeople() {
+function durationInSeconds(frames = state.totalFrames) {
+  return frames / EXPORT_FPS;
+}
+
+function lastFrameIndex(frames = state.totalFrames) {
+  return Math.max(0, frames - 1);
+}
+
+function exportButtonLabel() {
+  return `Export ${durationInSeconds().toFixed(1)} sec MP4`;
+}
+
+function setPlaybackButton() {
+  playButton.textContent = state.playing ? '❚❚' : '▶';
+  playButton.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+}
+
+function durationTimecode(frames = state.totalFrames) {
+  const wholeSeconds = Math.floor(frames / EXPORT_FPS);
+  const remainingFrames = frames % EXPORT_FPS;
+  return `00:${String(wholeSeconds).padStart(2, '0')}:${String(remainingFrames).padStart(2, '0')}`;
+}
+
+function settleFrameBounds(totalFrames = state.totalFrames) {
+  const min = Math.max(12, Math.round(totalFrames * 0.55));
+  return { min, max: Math.max(min, totalFrames - 5) };
+}
+
+function updateDurationUI({ announce = false } = {}) {
+  const seconds = durationInSeconds();
+  const preciseSeconds = seconds.toFixed(3);
+  const { min, max } = settleFrameBounds();
+  durationFramesInput.value = state.totalFrames;
+  durationSeconds.textContent = `${preciseSeconds} SEC`;
+  totalFramesReadout.textContent = `${state.totalFrames} FRAMES`;
+  hudDuration.textContent = `${EXPORT_FPS} FPS · ${durationTimecode()}`;
+  timelineEndTick.textContent = `${lastFrameIndex()}f`;
+  scrubber.max = lastFrameIndex();
+  settleSlider.min = min;
+  settleSlider.max = max;
+  settleSlider.value = state.settleFrame;
+  exportDurationSpec.textContent = `${state.totalFrames} frames · ${EXPORT_FPS} fps · ${preciseSeconds} sec`;
+  guideDurationSummary.textContent = `${state.totalFrames} frames / ${preciseSeconds} sec`;
+  guideExportLabel.textContent = exportButtonLabel();
+  if (!exportButton.disabled) exportButton.textContent = exportButtonLabel();
+  if (announce) exportStatus.textContent = `Ready to export ${state.totalFrames} frames at ${EXPORT_FPS} fps · ${preciseSeconds} sec.`;
+}
+
+function setTotalFrames(value) {
+  if (String(value).trim() === '') {
+    updateDurationUI();
+    return;
+  }
+  const nextTotal = Math.max(MIN_TOTAL_FRAMES, Math.min(MAX_TOTAL_FRAMES, Math.round(Number(value))));
+  if (!Number.isFinite(nextTotal) || nextTotal === state.totalFrames) {
+    updateDurationUI();
+    return;
+  }
+  const previousTotal = state.totalFrames;
+  const previousLastFrame = lastFrameIndex(previousTotal);
+  const frameRatio = previousLastFrame ? state.frame / previousLastFrame : 0;
+  const settleRatio = previousTotal ? state.settleFrame / previousTotal : 0.8;
+  state.totalFrames = nextTotal;
+  const { min, max } = settleFrameBounds(nextTotal);
+  state.frame = Math.min(lastFrameIndex(nextTotal), Math.round(frameRatio * lastFrameIndex(nextTotal)));
+  state.settleFrame = Math.max(min, Math.min(max, Math.round(settleRatio * nextTotal)));
+  state.playing = false;
+  cancelAnimationFrame(state.raf);
+  state.lastRenderFrame = state.frame;
+  setPlaybackButton();
+  updateDurationUI({ announce: true });
+  renderLane();
+}
+
+function persistShotPeople() {
   try {
-    localStorage.setItem(OPENING_PEOPLE_STORAGE_KEY, JSON.stringify(state.openingPeople));
+    localStorage.setItem(SHOT_PEOPLE_STORAGE_KEY, JSON.stringify(state.shotPeople));
     return true;
   } catch {
     return false;
   }
 }
 
-function setOpeningStatus(message) {
-  openingStatus.textContent = message;
+function setPersonStatus(message) {
+  personStatus.textContent = message;
 }
 
-function openingTabName(person) {
+function personTabName(person) {
   const words = person.name.trim().replace(/"/g, '').split(/\s+/).filter(Boolean);
   return words.slice(0, 2).join(' ') || 'Person';
 }
 
-function syncOpeningCopy() {
-  state.openingPeople.forEach((person, index) => {
-    Object.assign(people[index], person);
-    document.querySelector(`#openingTabName${index}`).textContent = openingTabName(person);
+function syncShotPeopleCopy() {
+  state.shotPeople.forEach((person, index) => {
+    Object.assign(people[SHOT_PEOPLE_LANE_INDEXES[index]], person);
+    document.querySelector(`#personTabName${index}`).textContent = personTabName(person);
   });
 }
 
-function syncOpeningInputs() {
-  const person = state.openingPeople[state.editingOpeningIndex];
-  openingNameInput.value = person.name;
-  openingRoleInput.value = person.role;
-  openingRankInput.value = person.rank;
-  document.querySelector('#restoreOpeningPerson').textContent = `Restore ${openingTabName(DEFAULT_OPENING_PEOPLE[state.editingOpeningIndex])}`;
-  document.querySelectorAll('[data-opening-index]').forEach((button, index) => {
-    const selected = index === state.editingOpeningIndex;
+function syncPersonInputs() {
+  const person = state.shotPeople[state.editingPersonIndex];
+  personNameInput.value = person.name;
+  personRoleInput.value = person.role;
+  personRankInput.value = person.rank;
+  shotPersonPanel.setAttribute('aria-labelledby', `personTab${state.editingPersonIndex}`);
+  document.querySelector('#restoreShotPerson').textContent = `Restore ${personTabName(DEFAULT_SHOT_PEOPLE[state.editingPersonIndex])}`;
+  document.querySelectorAll('[data-person-index]').forEach((button, index) => {
+    const selected = index === state.editingPersonIndex;
     button.classList.toggle('active', selected);
     button.setAttribute('aria-selected', String(selected));
     button.tabIndex = selected ? 0 : -1;
@@ -257,11 +383,11 @@ function closeGuide({ focusActor = false } = {}) {
   document.querySelector('.shell').removeAttribute('aria-hidden');
   if (focusActor) {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    openingControls.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-    openingControls.classList.add('is-guided');
-    openingNameInput.focus({ preventScroll: true });
-    openingNameInput.select();
-    setTimeout(() => openingControls.classList.remove('is-guided'), 1600);
+    shotPeopleControls.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+    shotPeopleControls.classList.add('is-guided');
+    personNameInput.focus({ preventScroll: true });
+    personNameInput.select();
+    setTimeout(() => shotPeopleControls.classList.remove('is-guided'), 1600);
     return;
   }
   if (guideReturnFocus instanceof HTMLElement) guideReturnFocus.focus();
@@ -335,12 +461,17 @@ function renderLane() {
   stage.style.setProperty('--blur', `${state.motionBlur ? (velocity * MOTION_BLUR_STRENGTH).toFixed(2) : 0}px`);
   stage.style.setProperty('--streak', `${state.motionBlur ? Math.min(1, velocity * 1.15) : 0}`);
   frameReadout.textContent = `F ${String(state.frame).padStart(3, '0')}`;
-  timelineLabel.textContent = `Frame ${state.frame} / ${TOTAL_FRAMES}`;
+  const timelineLastFrame = lastFrameIndex();
+  timelineLabel.textContent = `Frame ${state.frame} / ${timelineLastFrame}`;
   timingLabel.textContent = `settles on F${state.settleFrame}`;
+  breathingFrames.textContent = `${state.totalFrames - state.settleFrame} frames of breathing room`;
   scrubber.value = state.frame;
-  timelinePlayhead.style.left = `${(state.frame / TOTAL_FRAMES) * 100}%`;
-  timelineFill.style.width = `${(state.frame / TOTAL_FRAMES) * 100}%`;
+  timelinePlayhead.style.left = `${(state.frame / timelineLastFrame) * 100}%`;
+  timelineFill.style.width = `${(state.frame / timelineLastFrame) * 100}%`;
+  timelineTargetA.style.left = `${(Math.max(0, state.settleFrame - 4) / timelineLastFrame) * 100}%`;
+  timelineTargetB.style.left = `${(state.settleFrame / timelineLastFrame) * 100}%`;
   document.querySelector('#settleValue').textContent = state.settleFrame;
+  settleSlider.value = state.settleFrame;
   state.lastRenderFrame = state.frame;
 }
 
@@ -367,7 +498,7 @@ function buildLane() {
   ghostF.replaceChildren();
   ghostG.replaceChildren();
   ghostH.replaceChildren();
-  syncOpeningCopy();
+  syncShotPeopleCopy();
   const addCard = (person, index) => {
     const card = createCard(person, index);
     lane.appendChild(card);
@@ -382,54 +513,60 @@ function buildLane() {
 }
 
 scrubber.addEventListener('input', (event) => { state.frame = Number(event.target.value); renderLane(); });
-document.querySelector('#settleSlider').addEventListener('input', (event) => { state.settleFrame = Number(event.target.value); renderLane(); });
+durationFramesInput.addEventListener('input', (event) => {
+  const value = Number(event.target.value);
+  if (Number.isFinite(value) && value >= MIN_TOTAL_FRAMES && value <= MAX_TOTAL_FRAMES) setTotalFrames(value);
+});
+durationFramesInput.addEventListener('change', (event) => setTotalFrames(event.target.value));
+durationFramesInput.addEventListener('blur', () => { durationFramesInput.value = state.totalFrames; });
+settleSlider.addEventListener('input', (event) => { state.settleFrame = Number(event.target.value); renderLane(); });
 document.querySelector('#populationSlider').addEventListener('input', (event) => { state.populationCount = Number(event.target.value); buildLane(); });
 
-let openingCommitTimer = null;
-function commitOpeningTextUpdate() {
-  clearTimeout(openingCommitTimer);
-  openingCommitTimer = null;
+let personCommitTimer = null;
+function commitPersonTextUpdate() {
+  clearTimeout(personCommitTimer);
+  personCommitTimer = null;
   buildLane();
-  setOpeningStatus(persistOpeningPeople() ? 'Opening people updated. Saved in this browser.' : 'Opening people updated for this tab. Browser storage is unavailable.');
+  setPersonStatus(persistShotPeople() ? 'Shot people updated. Saved in this browser.' : 'Shot people updated for this tab. Browser storage is unavailable.');
 }
 
-function queueOpeningTextUpdate() {
-  const parsedRank = Number(openingRankInput.value);
-  const person = state.openingPeople[state.editingOpeningIndex];
-  person.name = openingNameInput.value.trim() || ['Main actor', 'Person 2', 'Person 3'][state.editingOpeningIndex];
-  person.role = openingRoleInput.value.trim() || 'Actor';
+function queuePersonTextUpdate() {
+  const parsedRank = Number(personRankInput.value);
+  const person = state.shotPeople[state.editingPersonIndex];
+  person.name = personNameInput.value.trim() || SHOT_PEOPLE_FALLBACK_NAMES[state.editingPersonIndex];
+  person.role = personRoleInput.value.trim() || 'Actor';
   if (Number.isFinite(parsedRank) && parsedRank >= 1) person.rank = Math.round(parsedRank);
-  syncOpeningCopy();
-  clearTimeout(openingCommitTimer);
-  openingCommitTimer = setTimeout(commitOpeningTextUpdate, 160);
+  syncShotPeopleCopy();
+  clearTimeout(personCommitTimer);
+  personCommitTimer = setTimeout(commitPersonTextUpdate, 160);
 }
 
-[openingNameInput, openingRoleInput, openingRankInput].forEach((input) => input.addEventListener('input', queueOpeningTextUpdate));
-[openingNameInput, openingRoleInput, openingRankInput].forEach((input) => input.addEventListener('blur', () => {
-  if (openingCommitTimer) commitOpeningTextUpdate();
-  syncOpeningInputs();
+[personNameInput, personRoleInput, personRankInput].forEach((input) => input.addEventListener('input', queuePersonTextUpdate));
+[personNameInput, personRoleInput, personRankInput].forEach((input) => input.addEventListener('blur', () => {
+  if (personCommitTimer) commitPersonTextUpdate();
+  syncPersonInputs();
 }));
 
-function selectOpeningPerson(index, { focusTab = false } = {}) {
-  if (openingCommitTimer) commitOpeningTextUpdate();
-  state.editingOpeningIndex = Math.max(0, Math.min(DEFAULT_OPENING_PEOPLE.length - 1, index));
-  syncOpeningInputs();
-  setOpeningStatus(`Editing ${state.openingPeople[state.editingOpeningIndex].name}.`);
-  if (focusTab) document.querySelector(`[data-opening-index="${state.editingOpeningIndex}"]`).focus();
+function selectShotPerson(index, { focusTab = false } = {}) {
+  if (personCommitTimer) commitPersonTextUpdate();
+  state.editingPersonIndex = Math.max(0, Math.min(DEFAULT_SHOT_PEOPLE.length - 1, index));
+  syncPersonInputs();
+  setPersonStatus(`Editing ${state.shotPeople[state.editingPersonIndex].name}.`);
+  if (focusTab) document.querySelector(`[data-person-index="${state.editingPersonIndex}"]`).focus();
 }
 
-document.querySelectorAll('[data-opening-index]').forEach((button) => {
-  button.addEventListener('click', () => selectOpeningPerson(Number(button.dataset.openingIndex)));
+document.querySelectorAll('[data-person-index]').forEach((button) => {
+  button.addEventListener('click', () => selectShotPerson(Number(button.dataset.personIndex)));
   button.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const current = Number(button.dataset.openingIndex);
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? DEFAULT_OPENING_PEOPLE.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + DEFAULT_OPENING_PEOPLE.length) % DEFAULT_OPENING_PEOPLE.length;
-    selectOpeningPerson(next, { focusTab: true });
+    const current = Number(button.dataset.personIndex);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? DEFAULT_SHOT_PEOPLE.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + DEFAULT_SHOT_PEOPLE.length) % DEFAULT_SHOT_PEOPLE.length;
+    selectShotPerson(next, { focusTab: true });
   });
 });
 
-window.addEventListener('pagehide', () => { if (openingCommitTimer) commitOpeningTextUpdate(); });
+window.addEventListener('pagehide', () => { if (personCommitTimer) commitPersonTextUpdate(); });
 
 function encodePortrait(source, width, height) {
   if (!width || !height) throw new Error('The portrait has no readable dimensions.');
@@ -487,36 +624,40 @@ async function preparePortrait(file) {
   });
 }
 
-let portraitRequestId = 0;
-let portraitUploadPending = false;
-const openingUploadInput = document.querySelector('#openingUpload');
-const portraitUploadControl = openingUploadInput.closest('.upload-button');
-openingUploadInput.addEventListener('change', async (event) => {
+const portraitRequestIds = Array(DEFAULT_SHOT_PEOPLE.length).fill(0);
+const pendingPortraitSlots = new Set();
+const personUploadInput = document.querySelector('#personUpload');
+const portraitUploadControl = personUploadInput.closest('.upload-button');
+
+function updatePortraitPendingState() {
+  const pending = pendingPortraitSlots.size > 0;
+  portraitUploadControl.toggleAttribute('aria-busy', pending);
+  exportButton.disabled = pending;
+  exportButton.textContent = pending ? 'Preparing portrait' : exportButtonLabel();
+}
+
+personUploadInput.addEventListener('change', async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
-  const requestId = ++portraitRequestId;
-  const personIndex = state.editingOpeningIndex;
-  const personName = state.openingPeople[personIndex].name;
-  portraitUploadPending = true;
-  portraitUploadControl.setAttribute('aria-busy', 'true');
-  exportButton.disabled = true;
-  exportButton.textContent = 'Preparing portrait';
-  setOpeningStatus(`Preparing ${personName}'s portrait…`);
+  const personIndex = state.editingPersonIndex;
+  const requestId = ++portraitRequestIds[personIndex];
+  const personName = state.shotPeople[personIndex].name;
+  pendingPortraitSlots.add(personIndex);
+  updatePortraitPendingState();
+  setPersonStatus(`Preparing ${personName}'s portrait…`);
   try {
     const photo = await preparePortrait(file);
-    if (requestId !== portraitRequestId) return;
-    state.openingPeople[personIndex].photo = photo;
+    if (requestId !== portraitRequestIds[personIndex]) return;
+    state.shotPeople[personIndex].photo = photo;
     buildLane();
-    setOpeningStatus(persistOpeningPeople() ? `${personName}'s portrait was replaced and saved in this browser.` : `${personName}'s portrait was replaced for this tab. Browser storage is unavailable.`);
+    setPersonStatus(persistShotPeople() ? `${personName}'s portrait was replaced and saved in this browser.` : `${personName}'s portrait was replaced for this tab. Browser storage is unavailable.`);
   } catch (error) {
-    if (requestId === portraitRequestId) setOpeningStatus(error.message);
+    if (requestId === portraitRequestIds[personIndex]) setPersonStatus(error.message);
   } finally {
     event.target.value = '';
-    if (requestId === portraitRequestId) {
-      portraitUploadPending = false;
-      portraitUploadControl.removeAttribute('aria-busy');
-      exportButton.disabled = false;
-      exportButton.textContent = 'Export shot';
+    if (requestId === portraitRequestIds[personIndex]) {
+      pendingPortraitSlots.delete(personIndex);
+      updatePortraitPendingState();
     }
   }
 });
@@ -524,37 +665,35 @@ openingUploadInput.addEventListener('change', async (event) => {
 portraitUploadControl.addEventListener('keydown', (event) => {
   if (!['Enter', ' '].includes(event.key)) return;
   event.preventDefault();
-  openingUploadInput.click();
+  personUploadInput.click();
 });
 
-document.querySelector('#restoreOpeningPerson').addEventListener('click', () => {
-  portraitRequestId += 1;
-  portraitUploadPending = false;
-  portraitUploadControl.removeAttribute('aria-busy');
-  exportButton.disabled = false;
-  exportButton.textContent = 'Export shot';
-  clearTimeout(openingCommitTimer);
-  openingCommitTimer = null;
-  const personIndex = state.editingOpeningIndex;
-  state.openingPeople[personIndex] = { ...DEFAULT_OPENING_PEOPLE[personIndex] };
-  const saved = persistOpeningPeople();
-  syncOpeningInputs();
+document.querySelector('#restoreShotPerson').addEventListener('click', () => {
+  const personIndex = state.editingPersonIndex;
+  portraitRequestIds[personIndex] += 1;
+  pendingPortraitSlots.delete(personIndex);
+  updatePortraitPendingState();
+  clearTimeout(personCommitTimer);
+  personCommitTimer = null;
+  state.shotPeople[personIndex] = { ...DEFAULT_SHOT_PEOPLE[personIndex] };
+  const saved = persistShotPeople();
+  syncPersonInputs();
   buildLane();
-  setOpeningStatus(saved ? `${state.openingPeople[personIndex].name} restored and saved.` : `${state.openingPeople[personIndex].name} restored for this tab.`);
+  setPersonStatus(saved ? `${state.shotPeople[personIndex].name} restored and saved.` : `${state.shotPeople[personIndex].name} restored for this tab.`);
 });
 document.querySelectorAll('[data-ease]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-ease]').forEach((b) => b.classList.remove('active')); button.classList.add('active'); easeMode = button.dataset.ease; renderLane(); }));
 document.querySelector('#blurToggle').addEventListener('click', (event) => { state.motionBlur = !state.motionBlur; event.currentTarget.classList.toggle('on', state.motionBlur); event.currentTarget.setAttribute('aria-pressed', String(state.motionBlur)); renderLane(); });
-document.querySelector('#resetButton').addEventListener('click', () => { state.frame = 0; state.playing = false; cancelAnimationFrame(state.raf); playButton.textContent = '▶'; renderLane(); });
+document.querySelector('#resetButton').addEventListener('click', () => { state.frame = 0; state.playing = false; cancelAnimationFrame(state.raf); setPlaybackButton(); renderLane(); });
 document.querySelector('#stepBack').addEventListener('click', () => { state.frame = Math.max(0, state.frame - 1); renderLane(); });
-document.querySelector('#stepForward').addEventListener('click', () => { state.frame = Math.min(TOTAL_FRAMES, state.frame + 1); renderLane(); });
+document.querySelector('#stepForward').addEventListener('click', () => { state.frame = Math.min(lastFrameIndex(), state.frame + 1); renderLane(); });
 playButton.addEventListener('click', () => {
-  if (!state.playing && state.frame >= TOTAL_FRAMES) {
+  if (!state.playing && state.frame >= lastFrameIndex()) {
     state.frame = 0;
     state.lastRenderFrame = 0;
     renderLane();
   }
   state.playing = !state.playing;
-  playButton.textContent = state.playing ? '❚❚' : '▶';
+  setPlaybackButton();
   if (state.playing) { state.lastTime = performance.now(); state.raf = requestAnimationFrame(tick); }
 });
 document.addEventListener('keydown', (event) => { if (event.code === 'Space' && daveGuide.hidden && !['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(document.activeElement.tagName)) { event.preventDefault(); playButton.click(); } });
@@ -584,6 +723,7 @@ function drawCover(ctx, image, x, y, width, height) {
 }
 
 function exportCards() {
+  syncShotPeopleCopy();
   return [...people.slice(0, 3), ...crowd.slice(0, state.populationCount), ...people.slice(3)].map((person) => ({ ...person }));
 }
 
@@ -773,7 +913,7 @@ function renderExportFrame(ctx, frame, cards, images) {
   ctx.font = '10px DM Mono, monospace';
   ctx.fillText('o  WEB PAGE / LIVE SCROLL', 27, 34);
   ctx.fillStyle = '#c4c0b8';
-  ctx.fillText('24 FPS  -  00:03:09', width - 177, 34);
+  ctx.fillText(`${EXPORT_FPS} FPS  -  ${durationTimecode()}`, width - 177, 34);
 }
 
 function loadExportImage(src) {
@@ -791,8 +931,11 @@ function downloadBlob(blob, filename) {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  link.hidden = true;
+  document.body.appendChild(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 async function exportShot(button) {
@@ -800,81 +943,70 @@ async function exportShot(button) {
   canvas.width = EXPORT_WIDTH;
   canvas.height = EXPORT_HEIGHT;
   const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('This browser could not create the export canvas.');
+  const totalFrames = state.totalFrames;
+  const shotSeconds = totalFrames / EXPORT_FPS;
   const cards = exportCards();
   const images = new Map();
+  button.textContent = 'Loading portraits';
+  exportStatus.textContent = 'Loading the portraits for this take…';
   const sources = [...new Set(cards.map((person) => person.photo).filter(Boolean))];
   const loaded = await Promise.all(sources.map(async (src) => [src, await loadExportImage(src)]));
   loaded.forEach(([src, image]) => images.set(src, image));
   if (document.fonts?.ready) await document.fonts.ready;
-  if (!canvas.captureStream || !window.MediaRecorder) {
-    renderExportFrame(ctx, state.frame, cards, images);
-    canvas.toBlob((blob) => blob && downloadBlob(blob, `starmeter-frame-${String(state.frame).padStart(3, '0')}-camera.png`), 'image/png');
-    button.textContent = 'PNG ready · camera synced';
-    return;
-  }
-  renderExportFrame(ctx, 0, cards, images);
-  // Capture every canvas update automatically. Manual requestFrame() capture
-  // is not supported consistently and can leave some browsers with a short clip.
-  const stream = canvas.captureStream();
-  const mimeCandidates = [
-    'video/mp4;codecs=avc1.42E01E',
-    'video/mp4;codecs=avc1.4D002A',
-    'video/mp4',
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ];
-  let mimeType;
-  let recorder;
-  for (const candidate of mimeCandidates) {
-    if (!MediaRecorder.isTypeSupported(candidate)) continue;
-    try {
-      recorder = new MediaRecorder(stream, { mimeType: candidate, videoBitsPerSecond: 12_000_000 });
-      mimeType = candidate;
-      break;
-    } catch {
-      // Try the next browser-supported container/codec combination.
-    }
-  }
-  if (!recorder || !mimeType) throw new Error('No browser video encoder is available.');
-  const isH264 = mimeType.startsWith('video/mp4');
-  const codecLabel = isH264 ? 'H.264 MP4' : 'WebM fallback';
-  const chunks = [];
-  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-  const stopped = new Promise((resolve, reject) => {
-    recorder.addEventListener('stop', resolve, { once: true });
-    recorder.addEventListener('error', (event) => reject(event.error || new Error('The browser video encoder stopped unexpectedly.')), { once: true });
+
+  button.textContent = 'Checking H.264';
+  exportStatus.textContent = 'Checking this browser’s frame-addressed H.264 encoder…';
+  const codec = await getFirstEncodableVideoCodec(['avc'], {
+    width: EXPORT_WIDTH,
+    height: EXPORT_HEIGHT,
+    bitrate: 12_000_000,
   });
-  recorder.start(250);
-  const frameBudget = 1000 / EXPORT_FPS;
-  const shotDuration = (TOTAL_FRAMES / EXPORT_FPS) * 1000;
-  const exportStart = performance.now();
-  for (let frame = 0; frame < TOTAL_FRAMES; frame += 1) {
-    const targetTime = exportStart + frame * frameBudget;
-    const leadIn = targetTime - performance.now();
-    if (leadIn > 0) await new Promise((resolve) => setTimeout(resolve, leadIn));
-    renderExportFrame(ctx, frame, cards, images);
-    button.textContent = `${codecLabel} ${String(frame + 1).padStart(2, '0')}/${TOTAL_FRAMES}`;
+  if (!codec) throw new Error('H.264 export needs a current Chrome, Edge, or Safari browser. Open this page there and try again.');
+
+  const target = new BufferTarget();
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target,
+  });
+  const videoSource = new CanvasSource(canvas, {
+    codec,
+    bitrate: 12_000_000,
+    keyFrameInterval: 2,
+    latencyMode: 'quality',
+    hardwareAcceleration: 'no-preference',
+  });
+  output.addVideoTrack(videoSource, { frameRate: EXPORT_FPS });
+  try {
+    await output.start();
+    exportStatus.textContent = `Encoding ${totalFrames} explicitly timed frames. Export speed will not change the shot length.`;
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      renderExportFrame(ctx, frame, cards, images);
+      await videoSource.add(frame / EXPORT_FPS, 1 / EXPORT_FPS, { keyFrame: frame === 0 });
+      button.textContent = `Encoding ${String(frame + 1).padStart(2, '0')}/${totalFrames}`;
+    }
+    button.textContent = 'Finalizing MP4';
+    await output.finalize();
+  } catch (error) {
+    try { await output.cancel(); } catch { /* The encoder may already be closed. */ }
+    throw error;
   }
-  const holdTime = exportStart + shotDuration - performance.now();
-  if (holdTime > 0) await new Promise((resolve) => setTimeout(resolve, holdTime));
-  if (recorder.state === 'recording') recorder.requestData();
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  recorder.stop();
-  await stopped;
-  stream.getTracks().forEach((track) => track.stop());
-  const extension = isH264 ? 'mp4' : 'webm';
-  downloadBlob(new Blob(chunks, { type: mimeType }), `starmeter-shot-1920x1080-24fps-camera.${extension}`);
-  button.textContent = `${codecLabel} ready · ${(TOTAL_FRAMES / EXPORT_FPS).toFixed(1)} sec`;
+  if (!target.buffer) throw new Error('The H.264 encoder finished without creating a file. Try the export again.');
+
+  const durationLabel = shotSeconds.toFixed(3);
+  const filename = `starmeter-shot-v3-${totalFrames}f-${durationLabel}s-1920x1080.mp4`;
+  downloadBlob(new Blob([target.buffer], { type: 'video/mp4' }), filename);
+  button.textContent = `MP4 ready · ${durationLabel} sec`;
+  exportStatus.textContent = `Downloaded ${filename} · ${totalFrames} frames · ${EXPORT_FPS} fps · ${durationLabel} sec.`;
 }
 
 document.querySelector('#exportButton').addEventListener('click', async (event) => {
   const button = event.currentTarget;
-  if (button.disabled || portraitUploadPending) return;
-  if (openingCommitTimer) commitOpeningTextUpdate();
+  if (button.disabled || pendingPortraitSlots.size > 0) return;
+  if (personCommitTimer) commitPersonTextUpdate();
   state.playing = false;
   cancelAnimationFrame(state.raf);
-  playButton.textContent = '▶';
+  setPlaybackButton();
   const shell = document.querySelector('.shell');
   const editorControls = [...shell.querySelectorAll('button, input, select')];
   const disabledStates = editorControls.map((control) => control.disabled);
@@ -886,20 +1018,36 @@ document.querySelector('#exportButton').addEventListener('click', async (event) 
   } catch (error) {
     console.error(error);
     button.textContent = 'Export failed';
+    exportStatus.textContent = error.message;
   }
   editorControls.forEach((control, index) => { control.disabled = disabledStates[index]; });
   shell.removeAttribute('aria-busy');
   button.disabled = true;
-  setTimeout(() => { button.disabled = false; button.textContent = 'Export shot'; }, 2200);
+  setTimeout(() => { button.disabled = pendingPortraitSlots.size > 0; button.textContent = pendingPortraitSlots.size > 0 ? 'Preparing portrait' : exportButtonLabel(); }, 2200);
 });
 
 function tick(now) {
   if (!state.playing) return;
-  if (now - state.lastTime > 1000 / 24) { state.frame += 1; state.lastTime = now; if (state.frame >= TOTAL_FRAMES) { state.frame = TOTAL_FRAMES; state.playing = false; playButton.textContent = '▶'; } renderLane(); }
+  const frameDuration = 1000 / EXPORT_FPS;
+  const elapsed = now - state.lastTime;
+  if (elapsed >= frameDuration) {
+    const framesAdvanced = Math.floor(elapsed / frameDuration);
+    state.lastTime += framesAdvanced * frameDuration;
+    const remainingFrameDurations = state.totalFrames - state.frame;
+    if (framesAdvanced >= remainingFrameDurations) {
+      state.frame = lastFrameIndex();
+      state.playing = false;
+      setPlaybackButton();
+    } else {
+      state.frame += framesAdvanced;
+    }
+    renderLane();
+  }
   if (state.playing) state.raf = requestAnimationFrame(tick);
 }
 
-syncOpeningCopy();
-syncOpeningInputs();
+updateDurationUI();
+syncShotPeopleCopy();
+syncPersonInputs();
 buildLane();
 if (!guideHasBeenSeen()) requestAnimationFrame(openGuide);
